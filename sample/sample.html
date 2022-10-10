@@ -1,0 +1,49 @@
+<html>
+    <title>Print.App Sample SDK</title>
+    <head>
+        <script src="https://editor.print.app/js/client.js"></script>
+    </head>
+    <body>
+		<button id="launch_btn" class="p-2 px-6 m-4 rounded-full bg-slate-700 text-white hover:bg-slate-900" >Launch Designer</button>
+		<div id="pp_preview_div"></div>
+	</body>
+	<script>
+		(function() {
+			//Get handles to the UI elements we'll be using
+			const	launchButton = document.getElementById('launch_btn'),
+					previewDiv = document.getElementById('pp_preview_div');
+				
+			//Disable the Launch button until PitchPrint is ready for use
+			launchButton.setAttribute('disabled', 'disabled');
+				
+				
+			/*Initialize Print.App
+				Kindly read more here on the options.. https://docs.pitchprint.com
+			*/
+			var printAppInstance = new PrintAppClient({
+				domainKey: 'dom_f80b84b4eb5cc81a140cb90f52e824f6',		//Kinldy provide your own APIKey
+				designId: 'design_a9ffabf7-cd2c-4214-b758-7f7e6925e8b7',	//Change this to your designId
+				custom: true
+			});
+				
+			//Function to run once the app is validated (ready to be used)
+			var appReady = () => {
+				console.log('ready')
+				launchButton.removeAttribute('disabled');				//Enable the Launch button
+				launchButton.onclick = () => printAppInstance.showApp();		//Attach event listener to the button when clicked to show the app
+			};
+			
+			//Function to run once the user has saved their project
+			var projectSaved = (_val) => {
+				let _data = _val.data;									//You can console.log the _data varaible to see all that's passed down
+				if (_data && _data.previews && _data.previews.length) {
+					previewDiv.innerHTML = _data.previews.reduce((_str, _prev) => `${_str}<img src="${_prev}">`, '');		//Show the preview images
+				}
+			};
+			
+			//Attach events to the app. You can see a list of all the events here: https://docs.pitchprint.com
+			printAppInstance.on('app:ready', appReady);
+			printAppInstance.on('project:saved', projectSaved);
+		})();
+	</script>
+</html>
