@@ -4,7 +4,7 @@
         <script src="https://editor.print.app/js/client.js"></script>
     </head>
     <body>
-		<button id="launch_btn" class="p-2 px-6 m-4 rounded-full bg-slate-700 text-white hover:bg-slate-900" >Launch Designer</button>
+		<button id="launch_btn" class="disabled:pointer-events-none disabled:opacity-50 p-2 px-6 m-4 rounded-full bg-slate-700 text-white hover:bg-slate-900" >Launch Designer</button>
 		<div id="pp_preview_div"></div>
 	</body>
 	<script>
@@ -23,7 +23,8 @@
 			var printAppInstance = new PrintAppClient({
 				domainKey: 'dom_f80b84b4eb5cc81a140cb90f52e824f6',		//Kinldy provide your own APIKey
 				designId: 'design_a9ffabf7-cd2c-4214-b758-7f7e6925e8b7',	//Change this to your designId
-				custom: true
+				custom: true,
+				mode: 'new-project',
 			});
 				
 			//Function to run once the app is validated (ready to be used)
@@ -43,7 +44,7 @@
 			
 			//Attach events to the app. You can see a list of all the events here: https://docs.pitchprint.com
 			printAppInstance.on('app:ready', appReady);
-			printAppInstance.on('project:saved', projectSaved);
+			printAppInstance.on('app:saved', projectSaved);
 		})();
 	</script>
 </html>

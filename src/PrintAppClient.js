@@ -2,9 +2,11 @@
 
 class PrintAppClient {
 	static NAME = 'print-app-client';
+	static EDITOR_NAME = 'print-app-editor';
     static VERSION = '1.0';
 	static ENDPOINTS = {
 		cdnBase: 'https://editor.print.app/',
+		frameDomain: 'https://editor.print.app'
 	};
 
 	SELECTORS = { };
@@ -32,7 +34,7 @@ class PrintAppClient {
 	
 	init(params) {
 	    this.model.env = {
-			mode: 'new',
+			isAdmin: false,
             customValues: {},
             ...params,
 			parentWidth: window.innerWidth,
@@ -49,7 +51,6 @@ class PrintAppClient {
         this.createButtons();
         this.model.act.uiCreated = true;
 		this.fire('ui:created');
-		this.fire('app:ready');
 	}
 	makeFrame() {
 		let frame = document.createElement('iframe');
@@ -61,7 +62,7 @@ class PrintAppClient {
 		if (document.body) document.body.appendChild(frame);
 
 		frame.classList.add('pa-frame');
-		frame.classList.add(this.model.ui.displayMode);
+		frame.classList.add(this.model.ui.displayMode || 'modal');
         return frame;
 	}
 	showApp() {
@@ -76,6 +77,7 @@ class PrintAppClient {
 		PrintAppClient.scrollTo(document.documentElement, 0, 100);
 		this.model.ui.frame.classList.add('shown');
 		this.model.act.editorShown = false;
+		this.sendMsg('app:show');
         this.setBtnPref();
 
 		this.fire('app:after:show');
@@ -127,19 +129,37 @@ class PrintAppClient {
             .catch(console.log);
 	}
 	
-	handleMsg (event) {
-		console.log('message from app');
-		const data = PrintAppClient.parse(event.data);
-		if (data) {
-			switch (data.event) {
-				case 'print-app':
+	sendMsg(event, data, handle) {
+		const message = JSON.stringify({ event, data });
 
+		const handler = handle || this.model.ui.messageSource;
+		if (!handler) return false;
+		handler.postMessage(message, PrintAppClient.ENDPOINTS.frameDomain);
+	}
+
+	handleMsg (event) {
+		if (event.origin !== PrintAppClient.ENDPOINTS.frameDomain) return;
+		
+		const message = PrintAppClient.parse(event.data);
+
+		if (message) {
+			switch (message.event) {
+				case PrintAppClient.EDITOR_NAME:
+					this.model.ui.messageSource = event.source;
+					this.sendMsg(PrintAppClient.NAME, this.model.env);
+				break;
+				case 'app:saved':
+					console.info('close-app', message.data);
+					this.closeApp();
+				break;
+				default:
+					this.fire(message.event, message.data);
 				break;
 			}
 		}
 	}
 
-	// Always use this to prevent JS from crashing due to parsing errors
+	// Always use this to prevent JS from crashing due to json parsing errors
 	static parse(string) {
 		if (!string) return;
 		try {
