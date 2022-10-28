@@ -3,7 +3,7 @@
 class PrintAppClient {
 	static NAME = 'print-app-client';
 	static EDITOR_NAME = 'print-app-editor';
-    static VERSION = '1.0';
+	static VERSION = '1.0';
 	static ENDPOINTS = {
 		cdnBase: 'https://editor.print.app/',
 		frameDomain: 'https://editor.print.app'
@@ -149,7 +149,7 @@ class PrintAppClient {
 					this.sendMsg(PrintAppClient.NAME, this.model.env);
 				break;
 				case 'app:saved':
-					console.info('close-app', message.data);
+					this.fire(message.event, message.data);
 					this.closeApp();
 				break;
 				default:
