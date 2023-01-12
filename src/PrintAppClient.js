@@ -1,5 +1,4 @@
 
-
 class PrintAppClient {
 	static NAME = 'print-app-client';
 	static EDITOR_NAME = 'print-app-editor';
@@ -12,7 +11,6 @@ class PrintAppClient {
 	SELECTORS = { };
 	handlers = {};
 	
-    
     model = {
         ui: {},
         env: {},
@@ -23,12 +21,13 @@ class PrintAppClient {
         handlers : {},
 		langCode: 'en',
         designs: new Map(),
+        projects: new Map(),
     };
 
 	constructor(params) {
 		window.onmessage = this.handleMsg.bind(this);
 		
-		if (!params) return console.error('Parameters required but none passed');
+		if (!params) return console.error('Parameters required but undefined was passed'); 
 		this.init(params);
 	}
 	
@@ -36,19 +35,18 @@ class PrintAppClient {
 	    this.model.env = {
 			isAdmin: false,
             customValues: {},
-            ...params,
 			parentWidth: window.innerWidth,
             parentHeight: window.innerHeight,
+            ...params,
 		};
-		// validate();
+		this.validate();
 		this.createUi();
 	}
 	async createUi() {
-	    // TODO: Load client stylesheet..
-		await PrintAppClient.loadStyle('styles/client.css');
+		this.fire('ui:create');
+		await PrintAppClient.loadStyle(`${PrintAppClient.ENDPOINTS.cdnBase}styles/client.css`);
 		        
         this.model.ui.frame = this.makeFrame();
-        this.createButtons();
         this.model.act.uiCreated = true;
 		this.fire('ui:created');
 	}
