@@ -1,15 +1,19 @@
 {
-  "name": "printappclient",
-  "version": "1.0.0",
-  "description": "",
-  "main": "src/client.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "author": "",
-  "license": "ISC",
-  "devDependencies": {
-    "autoprefixer": "^10.4.12",
-    "tailwindcss": "^3.1.8"
-  }
+    "name": "printappclient",
+    "version": "1.0.0",
+    "description": "",
+    "main": "src/client.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "autoprefixer": "^10.4.12",
+        "tailwindcss": "^3.1.8"
+    },
+    "dependencies": {
+        "gulp": "^4.0.2",
+        "gulp-s3-upload": "^1.7.3"
+    }
 }

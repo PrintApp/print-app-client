@@ -39,7 +39,6 @@ class PrintAppClient {
             parentHeight: window.innerHeight,
             ...params,
 		};
-		this.validate();
 		this.createUi();
 	}
 	async createUi() {
@@ -100,33 +99,7 @@ class PrintAppClient {
 	createButtons() {
 		// TODO: Create the buttons..
 	}
-	validate() {
-		this.comm('init', { apiKey: this.vars.apiKey, userId: this.vars.userId, client: this.vars.client }, 'POST')
-            .then(_data => {
-                if (_data.error) return false;
-                
-                this.fire('client-validated', _data);
-                this.model.env = _data.validation;
-                this.model.config = _data.config;
-                this.model.act.validated = true;
-                
-                if (typeof this.vars.customizationRequired !== 'undefined') this.model.config.customizationRequired = Boolean(this.vars.customizationRequired);
-                if (typeof this.vars.pdfDownload !== 'undefined') this.model.config.pdfDownload = Boolean(this.vars.pdfDownload);
-                
-                this._makeTag('script', this.model.config.customJs);
-                this._makeTag('style', this.model.config.customCss);
-                
-                if (typeof this[_cb] === 'function') {
-                    this[_cb]();
-                    this._loadLang();
-                } else {
-                    this._loadLang();
-                    this.createUi();
-                }
-            })
-            .catch(console.log);
-	}
-	
+		
 	sendMsg(event, data, handle) {
 		const message = JSON.stringify({ event, data });
 
