@@ -170,54 +170,51 @@ class PrintAppClient {
 		}
 	}
 
-	static comm(url, data, method = 'POST') {
-        return new Promise(async (respond, reject) => {
-			let cType, formData;
-				
-			if (data && method === 'GET') {
-				formData = [];
-				for (let _key in data) {
-					if (typeof data[_key] !== 'undefined' && data[_key] !== null) formData.push(encodeURIComponent(_key) + '=' + encodeURIComponent(data[_key]));
+	static async comm(url, data, method = 'POST') {
+		let cType, formData;
+			
+		if (data && method === 'GET') {
+			formData = [];
+			for (let _key in data) {
+				if (typeof data[_key] !== 'undefined' && data[_key] !== null) formData.push(encodeURIComponent(_key) + '=' + encodeURIComponent(data[_key]));
+			}
+			formData = formData.join('&').replace(/%20/g, '+');
+		}
+		if (method === 'POST' || method === 'PUT') {
+			cType = 'application/x-www-form-urlencoded';
+			if (data) formData = JSON.stringify(data);
+		} else if (method === 'GET') {
+			cType = 'text/plain';
+			if (formData) url += `?${formData}`;
+			formData = undefined;
+		}
+		
+		if (url.indexOf('//s3') === 0) url = `https:${url}`;
+		if (url.indexOf('https://') !== 0) url = `${PrintAppClient.ENDPOINTS.apiBase}${url}`;
+		
+		const   headers = new window.Headers();
+		headers.append('Content-Type', cType);
+		
+		window.fetch(url, {
+				method: method,
+				headers: headers,
+				body: formData
+			})
+			.then(_ => {
+				if (_) {
+					return _.json();
+				} else {
+					throw new Error('Communication error');
 				}
-				formData = formData.join('&').replace(/%20/g, '+');
-			}
-			if (method === 'POST' || method === 'PUT') {
-				cType = 'application/x-www-form-urlencoded';
-				if (data) formData = JSON.stringify(data);
-			} else if (method === 'GET') {
-				cType = 'text/plain';
-				if (formData) url += `?${formData}`;
-				formData = undefined;
-			}
-			
-			if (url.indexOf('//s3') === 0) url = `https:${url}`;
-			if (url.indexOf('https://') !== 0) url = `${PrintAppClient.ENDPOINTS.apiBase}${url}`;
-			
-			const   headers = new window.Headers();
-			headers.append('Content-Type', cType);
-			
-			window.fetch(url, {
-					method: method,
-					headers: headers,
-					body: formData
-				})
-				.then(_ => {
-					if (_) {
-						return _.json();
-					} else {
-						throw new Error('Communication error');
-					}
-				})
-				.then(_data => {
-					if (_data && _data.message && _data.statusCode && _data.statusCode > 299) return reject(_data.message);
-					if (typeof _data.sessToken !== 'undefined') {
-						Storage.setSessToken(_data.sessToken);
-						delete _data.sessToken;
-					}
-					respond(_data);
-				})
-				.catch(reject);
-		});
+			})
+			.then(_data => {
+				if (_data && _data.message && _data.statusCode && _data.statusCode > 299) return _data.message;
+				if (typeof _data.sessToken !== 'undefined') {
+					Storage.setSessToken(_data.sessToken);
+					delete _data.sessToken;
+				}
+				return _data;
+			});
 	}
 
 	static async loadStyle(url) {
