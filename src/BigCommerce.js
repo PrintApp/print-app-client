@@ -105,9 +105,9 @@ class PrintAppBigCommerce {
 
     projectSaved(value) {
         const { data } = value;
-        console.log(data);
-        let store = window.localStorage.getItem(PrintAppBigCommerce.STORAGEKEY),
-        	projects = window.localStorage.getItem(PrintAppBigCommerce.PROJECTSKEY),
+        
+        let store = window.localStorage.getItem(PrintAppBigCommerce.STORAGEKEY) || {},
+        	projects = window.localStorage.getItem(PrintAppBigCommerce.PROJECTSKEY) || {},
             element = this.getElement();
         	
 		if (typeof store === 'string') store = PrintAppBigCommerce.parse(store);
