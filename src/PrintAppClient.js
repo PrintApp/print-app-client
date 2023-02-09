@@ -17,6 +17,7 @@ class PrintAppClient {
         act: {
             pipe: {}
         },
+		session: {},
         lang: {},
         handlers : {},
 		langCode: 'en',
@@ -43,9 +44,10 @@ class PrintAppClient {
 	}
 	async createUi() {
 		this.fire('ui:create');
-		await PrintAppClient.loadStyle(`${PrintAppClient.ENDPOINTS.cdnBase}styles/client.css`);
+		this.addStyling();
 		        
         this.model.ui.frame = this.makeFrame();
+		this.createCommandUI();
         this.model.act.uiCreated = true;
 		this.fire('ui:created');
 	}
@@ -59,8 +61,41 @@ class PrintAppClient {
 		if (document.body) document.body.appendChild(frame);
 
 		frame.classList.add('pa-frame');
-		frame.classList.add(this.model.ui.displayMode || 'modal');
+		frame.classList.add(this.model.ui.displayMode || 'pa-modal');
         return frame;
+	}
+	async createCommandUI() {
+		if (!this.model.env.commandSelector) return;
+		const base = document.querySelector(this.model.env.commandSelector);
+		if (!base) return;
+		await PrintAppClient.loadTag(`https://editor.print.app/js/rivets.bundled.min.js`);		// bundle with client..
+
+		this.model.ui.commands = {
+			lang: {
+				customize: 'Personalise Design',
+				resume: 'Resume Design',
+				clear: 'Clear Design',
+			},
+			customize_click: (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				this.showApp();
+			},
+			clear_click: (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				this.restartApp();
+			}
+		};
+		base.innerHTML = `<div class="pa-commands">
+					<button rv-unless="resume" rv-on-click="customize_click" class="button">{lang.customize}</button>
+					<button rv-if="resume" rv-on-click="customize_click" class="button">{lang.resume}</button>
+					<button rv-if="clear" rv-on-click="clear_click" class="button">{lang.clear}</button>
+					<div>`;
+		rivets.bind(base, this.model.ui.commands);
+	}
+	setCommandPref() {
+		
 	}
 	showApp() {
 		this.fire('app:before:show');
@@ -71,35 +106,46 @@ class PrintAppClient {
 		document.body.style.overflow = document.documentElement.style.overflow = 'hidden';
         document.body.style.position = 'relative';
 
-		PrintAppClient.scrollTo(document.documentElement, 0, 100);
-		this.model.ui.frame.classList.add('shown');
+		// PrintAppClient.scrollTo(document.documentElement, 0, 100);
+		this.model.ui.frame.classList.add('pa-shown');
+		setTimeout(_ => this.model.ui.frame.style.filter = 'none', 1000);
 		this.model.act.editorShown = false;
 		this.sendMsg('app:show');
-        this.setBtnPref();
+        this.setCommandPref();
 
 		this.fire('app:after:show');
 	}
 	closeApp() {
         this.fire('app:before:close');
         
-		this.model.ui.frame.classList.remove('shown');
+		this.model.ui.frame.classList.remove('pa-shown');
 		if (this.model.act.bodyStyles) {
 			document.body.style.overflow = this.model.act.bodyStyles.overflow;
             document.body.style.position = this.model.act.bodyStyles.position;
         }
 		document.documentElement.style.overflow = '';
         this.model.act.editorShown = false;
-        this.setBtnPref();
+        this.setCommandPref();
 
 		this.fire('app:after:close');
     }
-	setBtnPref() {
+	saved(value) {
+		this.model.session = value;
+		this.updatePreviews();
+
+	}
+	restartApp() {
 		
 	}
-	createButtons() {
-		// TODO: Create the buttons..
+	updatePreviews() {
+		if (!this.model.env.previewsSelector) return;
+		const { previews } = this.model.session;
+		const base = document.querySelector(this.model.env.previewsSelector);
+		if (!base || !previews || !previews.length) return;
+		base.innerHTML = `<div class="pa-previews"><div class="pa-previews-main">` +
+							previews.map(p => `<div><img src="${p.url}"/></div>`).join('')
+						+ `</div></div>`;
 	}
-		
 	sendMsg(event, data, handle) {
 		const message = JSON.stringify({ event, data });
 
@@ -120,6 +166,14 @@ class PrintAppClient {
 					this.sendMsg(PrintAppClient.NAME, this.model.env);
 				break;
 				case 'app:saved':
+					this.model.ui.commands.resume = true;
+					this.model.ui.commands.clear = true;
+					this.saved(message.data);
+					this.fire(message.event, message.data);
+					this.closeApp();
+				break;
+				case 'app:closed':
+					this.model.ui.commands.resume = true;
 					this.fire(message.event, message.data);
 					this.closeApp();
 				break;
@@ -217,14 +271,20 @@ class PrintAppClient {
 			});
 	}
 
-	static async loadStyle(url) {
-		return new Promise((resolve, reject) => {
-			url = `${PrintAppClient.ENDPOINTS.cdnBase}${url}`;
-			const tag = document.createElement('link');
-			tag.rel = 'stylesheet';
-			if (document.head) document.head.appendChild(tag);
+	static async loadTag(url) {
+		return new Promise((resolve) => {
+            var tag;
+            if (url.endsWith('.css')) {
+                tag = document.createElement('link');
+			    tag.rel = 'stylesheet';
+		        if (document.head) document.head.appendChild(tag);
+                tag.href = url;
+            } else if (url.endsWith('.js')) {
+                tag = document.createElement('script');
+		        if (document.head) document.head.appendChild(tag);
+                tag.src = url;
+            }
 			tag.onload = resolve;
-			tag.href = url;
 		});
 	}
 	static scrollTo(e, t, s) {
@@ -232,7 +292,23 @@ class PrintAppClient {
         let i = (t - e.scrollTop) / s * 10;
         setTimeout(()=>{
             e.scrollTop = e.scrollTop + i,
-            e.scrollTop !== t && this._scrollTo(e, t, s - 10)
-        } ,10);
+            e.scrollTop !== t && this.scrollTo(e, t, s - 10)
+        }, 10);
     }
+	addStyling() {
+		const styling = `
+			.pa-frame{ overflow: hidden; border: none; z-index: -10; position: fixed; pointer-events: none; transform: scale(0); filter: brightness(0.6); transition: transform .3s ease-out .2s, filter .3s ease-out .4s; }
+			.pa-frame.pa-shown{ display: block; z-index: 999999999; pointer-events: auto; transform: scale(1); filter: brightness(0.6); }
+			.pa-frame.pa-shown.pa-modal{ left:0; top: 0; right:0; bottom: 0; width: 100vw; height: 100vh; }
+			.pa-commands { display: flex; flex-direction: column; gap: 10px; }
+			.pa-commands>*{ max-width: 18rem; margin-left: 0; }
+			.pa-previews{ width:100%; height: 100%; overflow-x: auto; }
+			.pa-previews>.pa-previews-main{ white-space: nowrap; }
+			.pa-previews>.pa-previews-main>div{ display: inline-block; }
+		`;
+		const tag = document.createElement('style');
+		tag.setAttribute('type', 'text/css');
+		tag.appendChild(document.createTextNode(styling));
+		if (document.head) document.head.appendChild(tag);
+	}
 }

@@ -7,7 +7,9 @@
         scale-0 pointer-events-none brightness-50
         transition ease-out duration-200 -z-10 fixed;
 }
+.pa-frame.shown.modal {
+    @apply !top-0 !left-0 !right-0 !bottom-0;
+}
 .pa-frame.shown {
-    @apply scale-100 block top-0 left-0 z-[999] brightness-100 pointer-events-auto;
-            
+    @apply scale-100 block top-0 left-0 z-[9999] brightness-100 pointer-events-auto;
 }
