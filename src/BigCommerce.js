@@ -18,10 +18,13 @@ class PrintAppBigCommerce {
 	}
 	
 	async init(params) {
-	    this.model = {
-            ...params,
-		};
+	    this.model = { ...params };
+
         if (!this.model.hostname) return console.error('This script needs to be loaded via wire');
+
+        if (window.location.href.includes('/account.php?action=order_status')) return this.doClientAccount();
+        if (window.location.href.includes('/cart.php')) return await this.setCartImages();
+
 		await this.getUser();
         window.addEventListener('DOMContentLoaded', this.check);
 	
@@ -31,6 +34,7 @@ class PrintAppBigCommerce {
         }, 1500);
         const qry = document.querySelectorAll('.quickview');
         if (qry) qry.forEach(btn => btn.addEventListener('click', fn));
+
         this.check();
 	}
 
@@ -58,15 +62,13 @@ class PrintAppBigCommerce {
 
     async mountClient() {
         await PrintAppBigCommerce.loadTag(`${PrintAppBigCommerce.ENDPOINTS.baseCdn}js/client.js`);
-        
-        if (window.location.href.indexOf('/account.php?action=order_status') !== -1) return this.doClientAccount();
+
     	if (this.model.clientMounted || typeof PrintAppClient !== 'function') return;
 
     	let titleTag = document.querySelector('[property="og:title"]');
         if (titleTag) this.model.title = titleTag.getAttribute('content');
         
-        let store = window.localStorage.getItem(PrintAppBigCommerce.STORAGEKEY) || { };
-        if (typeof store === 'string') store = PrintAppBigCommerce.parse(store);
+        let store = PrintAppBigCommerce.getStorage(PrintAppBigCommerce.STORAGEKEY);
         let currentValue = store[this.model.productId] || {};
         
         if (currentValue && currentValue.projectId) {
@@ -106,13 +108,10 @@ class PrintAppBigCommerce {
     projectSaved(value) {
         const { data } = value;
         
-        let store = window.localStorage.getItem(PrintAppBigCommerce.STORAGEKEY) || {},
-        	projects = window.localStorage.getItem(PrintAppBigCommerce.PROJECTSKEY) || {},
+        let store = PrintAppBigCommerce.getStorage(PrintAppBigCommerce.STORAGEKEY),
+        	projects = PrintAppBigCommerce.getStorage(PrintAppBigCommerce.PROJECTSKEY),
             element = this.getElement();
         	
-		if (typeof store === 'string') store = PrintAppBigCommerce.parse(store);
-	    if (typeof projects === 'string') projects = PrintAppBigCommerce.parse(projects);
-	    
 		if (data.clear) {
             element.value = '';
 		    delete store[this.model.productId];
@@ -133,6 +132,39 @@ class PrintAppBigCommerce {
     getElement() {
         return document.querySelector(`[name="attribute[${this.model.designData.modifierId}]"]`);
     }
+    static getStorage(key) {
+        let r = window.localStorage.getItem(key);
+        if (typeof r === 'string') return PrintAppBigCommerce.parse(r);
+        return r || {};
+    }
+
+
+    async setCartImages() {
+    	var params = { include: 'lineItems.digitalItems.options,lineItems.physicalItems.options' },
+            element = document.querySelectorAll('.cart-item-figure');
+        
+        const data = await PrintAppBigCommerce.comm(`${window.location.protocol}//${window.location.host}/api/storefront/carts`, params, 'GET').catch(console.log);
+        if (!Array.isArray(data)) return;
+        const projects = PrintAppBigCommerce.getStorage(PrintAppBigCommerce.PROJECTSKEY);
+
+        data.forEach(cart  => {
+            if(cart && cart.lineItems) {
+                cart.lineItems.physicalItems.forEach((lineItem, idx) => {
+                    if(lineItem.options) {
+                        var options = lineItem.options;
+                        options.forEach(opt => {
+                            if(opt.name === "print-app") {
+                                let v = projects[opt.value];
+                                element[idx].querySelector('IMG').src = v.previews[0].url;
+                                element[idx].querySelector('IMG').srcset = v.previews[0].url;
+                            }
+                        })
+                    }
+                })
+            }
+        })
+    }
+
     static async loadTag(url) {
 		return new Promise((resolve) => {
             var tag;

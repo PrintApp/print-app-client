@@ -9,11 +9,16 @@ class PrintAppClient {
 	};
 
 	SELECTORS = { };
-	handlers = {};
+	handlers = { };
 	
     model = {
-        ui: {},
+        ui: { commands: { }},
         env: {},
+        state: {
+			shown: false,
+			closed: false,
+			saved: false,
+		},
         act: {
             pipe: {}
         },
@@ -40,6 +45,7 @@ class PrintAppClient {
             parentHeight: window.innerHeight,
             ...params,
 		};
+		this.model.state.mode = params.mode || 'new-project';
 		this.createUi();
 	}
 	async createUi() {
@@ -84,7 +90,7 @@ class PrintAppClient {
 			clear_click: (e) => {
 				e.preventDefault();
 				e.stopPropagation();
-				this.restartApp();
+				this.clearDesign();
 			}
 		};
 		base.innerHTML = `<div class="pa-commands">
@@ -93,9 +99,20 @@ class PrintAppClient {
 					<button rv-if="clear" rv-on-click="clear_click" class="button">{lang.clear}</button>
 					<div>`;
 		rivets.bind(base, this.model.ui.commands);
+		this.setCommandPref();
 	}
 	setCommandPref() {
-		
+		switch (this.model.state.mode) {
+			case 'edit-project':
+				this.model.ui.commands.resume = true;
+				this.model.ui.commands.clear = true;
+			break;
+			default:
+			case 'new-project':
+				this.model.ui.commands.resume = false;
+				this.model.ui.commands.clear = false;
+			break;
+		}
 	}
 	showApp() {
 		this.fire('app:before:show');
@@ -106,10 +123,9 @@ class PrintAppClient {
 		document.body.style.overflow = document.documentElement.style.overflow = 'hidden';
         document.body.style.position = 'relative';
 
-		// PrintAppClient.scrollTo(document.documentElement, 0, 100);
 		this.model.ui.frame.classList.add('pa-shown');
 		setTimeout(_ => this.model.ui.frame.style.filter = 'none', 1000);
-		this.model.act.editorShown = false;
+		this.model.state.shown = true;
 		this.sendMsg('app:show');
         this.setCommandPref();
 
@@ -124,18 +140,19 @@ class PrintAppClient {
             document.body.style.position = this.model.act.bodyStyles.position;
         }
 		document.documentElement.style.overflow = '';
-        this.model.act.editorShown = false;
+		this.model.state.shown = false;
         this.setCommandPref();
 
 		this.fire('app:after:close');
     }
 	saved(value) {
 		this.model.session = value;
-		this.updatePreviews();
-
+		this.model.state.mode = value.mode;
 	}
-	restartApp() {
-		
+	clearDesign() {
+		this.model.state.mode = 'new-project';
+		this.setCommandPref();
+		this.fire('app:project:reset', { projectId: this.model.session.projectId });
 	}
 	updatePreviews() {
 		if (!this.model.env.previewsSelector) return;
@@ -166,16 +183,18 @@ class PrintAppClient {
 					this.sendMsg(PrintAppClient.NAME, this.model.env);
 				break;
 				case 'app:saved':
-					this.model.ui.commands.resume = true;
-					this.model.ui.commands.clear = true;
+					this.model.state.saved = true;
 					this.saved(message.data);
 					this.fire(message.event, message.data);
 					this.closeApp();
+					this.setCommandPref();
+					this.updatePreviews();
 				break;
 				case 'app:closed':
-					this.model.ui.commands.resume = true;
+					this.model.state.closed = true;
 					this.fire(message.event, message.data);
 					this.closeApp();
+					this.setCommandPref();
 				break;
 				default:
 					this.fire(message.event, message.data);
