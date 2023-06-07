@@ -1,8 +1,14 @@
 /* global wp_ajax_url */// Added in the plugin via wp_localize_script
 
+/* PrintAppClient */// Created
+
 class PrintAppWordpress extends PrintAppClient {
     constructor(params) {
-        super(params);
+        super({
+            ...params,
+            commandSelector: '#pa-buttons',
+            previewsSelector: '.woocommerce-product-gallery',
+        });
         this.params = params;
         this.selectors = {};
         this.selectors.qryCartBtn = '.single_add_to_cart_button,.kad_add_to_cart,.addtocart,#add-to-cart,.add_to_cart,#add,#AddToCart,#product-add-to-cart,#add_to_cart,#button-cart,#AddToCart-product-template,.product-details-wrapper .add-to-cart,.btn-addtocart,.ProductForm__AddToCart,.add_to_cart_product_page,#addToCart,[name="add"],[data-button-action="add-to-cart"],#Add,#form-action-addToCart';
@@ -35,7 +41,6 @@ class PrintAppWordpress extends PrintAppClient {
     }
     
     async paw_resetProject(event) {
-        event.preventDefault();
         const data = { 'product_id': this.params.product.id, action: 'print_app_reset_project' };
         await this.comm.post(window.wp_ajax_url, data);
         window.location.reload();

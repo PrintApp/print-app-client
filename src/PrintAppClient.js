@@ -38,6 +38,10 @@ class PrintAppClient {
 	}
 	
 	init(params) {
+		if (params.previews) {
+			if (typeof params.previews === 'string') params.previews = JSON.parse(params.previews);
+			this.model.session.previews = params.previews;
+		}
 	    this.model.env = {
 			isAdmin: false,
             customValues: {},
@@ -71,9 +75,8 @@ class PrintAppClient {
         return frame;
 	}
 	async createCommandUI() {
-		if (!this.model.env.commandSelector) return;
-		const base = document.querySelector(this.model.env.commandSelector);
-		if (!base) return;
+		this.model.ui.base = document.querySelector(this.model.env.commandSelector || '#pa-buttons');
+		if (!this.model.ui.base) return;
 		await PrintAppClient.loadTag(`https://editor.print.app/js/rivets.bundled.min.js`);		// bundle with client..
 
 		this.model.ui.commands = {
@@ -93,13 +96,14 @@ class PrintAppClient {
 				this.clearDesign();
 			}
 		};
-		base.innerHTML = `<div class="pa-commands">
+		this.model.ui.base.innerHTML = `<div class="pa-commands">
 					<button rv-unless="resume" rv-on-click="customize_click" class="button">{lang.customize}</button>
 					<button rv-if="resume" rv-on-click="customize_click" class="button">{lang.resume}</button>
 					<button rv-if="clear" rv-on-click="clear_click" class="button">{lang.clear}</button>
 					<div>`;
-		rivets.bind(base, this.model.ui.commands);
+		rivets.bind(this.model.ui.base, this.model.ui.commands);
 		this.setCommandPref();
+		this.updatePreviews();
 	}
 	setCommandPref() {
 		switch (this.model.state.mode) {
@@ -147,7 +151,7 @@ class PrintAppClient {
     }
 	saved(value) {
 		this.model.session = value;
-		this.model.state.mode = value.mode;
+		this.model.state.mode = 'edit-project';
 	}
 	clearDesign() {
 		this.model.state.mode = 'new-project';
@@ -196,11 +200,22 @@ class PrintAppClient {
 					this.closeApp();
 					this.setCommandPref();
 				break;
+				case 'auth:validation:failed':
+					this.unload(message.data);
+					this.fire(message.event, message.data);
+				break;
 				default:
 					this.fire(message.event, message.data);
 				break;
 			}
 		}
+	}
+
+	unload(data) {
+		if (this.model.ui.base) {
+			this.model.ui.base.innerHTML = typeof data === 'string' ? data : '';
+		}
+		console.log(data);
 	}
 
 	// Always use this to prevent JS from crashing due to json parsing errors
