@@ -14,12 +14,11 @@ class PrintAppOpenCart extends PrintAppClient {
     }
 
     async resetProject(event) {
-        const data = {
-            'product_id': this.params.product.id,
-            action: 'print_dot_app_reset_project'
-        };
-        await this.comm.post(window.wp_ajax_url, data);
-        window.location.reload();
+        event.preventDefault();
+        const data = { productId: this.params.product.id, clear : true };
+        await this.comm.post(this.params.product.url, data);
+        window.location.reload()
+        
     }
 
     createInput(optId) {
