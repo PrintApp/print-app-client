@@ -8,7 +8,10 @@ class PrintAppClient {
 		frameDomain: 'https://editor.print.app'
 	};
 
-	SELECTORS = { };
+	SELECTORS = {
+		miniSelector: '#main > div.row > div:nth-child(1),.single-product-thumbnail,#content > div > div.col-sm-8 > ul.thumbnails',
+		cartButton: '.single_add_to_cart_button,.kad_add_to_cart,.addtocart,#add-to-cart,.add_to_cart,#add,#AddToCart,#product-add-to-cart,#add_to_cart,#button-cart,#AddToCart-product-template,.product-details-wrapper .add-to-cart,.btn-addtocart,.ProductForm__AddToCart,.add_to_cart_product_page,#addToCart,[name="add"],[data-button-action="add-to-cart"]'
+	};
 	handlers = { };
 	
     model = {
@@ -222,8 +225,9 @@ class PrintAppClient {
 	static parse(string) {
 		if (!string) return;
 		try {
-			return JSON.parse(string);
-		} catch (e) { console.error(e) }
+			let data = JSON.parse(string);
+			return data || string;
+		} catch (e) {  }
 	}
 
 	on (type, fnc) {
@@ -283,25 +287,16 @@ class PrintAppClient {
 		const   headers = new window.Headers();
 		headers.append('Content-Type', cType);
 		
-		window.fetch(url, {
-				method: method,
-				headers: headers,
-				body: formData
-			})
-			.then(_ => {
-				if (_) {
-					return _.json();
-				} else {
-					throw new Error('Communication error');
+		window.fetch(url, { method: method, headers: headers, body: formData })
+			.then(d => {
+				return d ? PrintAppClient.parse(d) : d;
+			}).then(response => {
+				if (response && response.message && response.statusCode && response.statusCode > 299) return response.message;
+				if (typeof response.sessToken !== 'undefined') {
+					Storage.setSessToken(response.sessToken);
+					delete response.sessToken;
 				}
-			})
-			.then(_data => {
-				if (_data && _data.message && _data.statusCode && _data.statusCode > 299) return _data.message;
-				if (typeof _data.sessToken !== 'undefined') {
-					Storage.setSessToken(_data.sessToken);
-					delete _data.sessToken;
-				}
-				return _data;
+				return response;
 			});
 	}
 
