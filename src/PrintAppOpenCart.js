@@ -14,7 +14,6 @@ class PrintAppOpenCart extends PrintAppClient {
     }
 
     async resetProject(event) {
-        event.preventDefault();
         const data = { productId: this.params.product.id, clear : true };
         await this.comm.post(this.params.product.url, data);
         window.location.reload()

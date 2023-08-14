@@ -61,6 +61,7 @@ class PrintAppClient {
 		        
         this.model.ui.frame = this.makeFrame();
 		this.createCommandUI();
+		this.model.ui.cartButton = document.querySelector(this.SELECTORS.cartButton);
         this.model.act.uiCreated = true;
 		this.fire('ui:created');
 	}
@@ -138,6 +139,16 @@ class PrintAppClient {
 
 		this.fire('app:after:show');
 	}
+	handleCartBtn() {
+		if (this.model.config && this.model.config.forceCustomization && this.model.ui.cartButton) {
+			if (this.model.state.mode === 'new-project') {
+				if (this.model.ui.cartButton.style.display != 'none') this.model.ui.cartButtonStyle = this.model.ui.cartButton.style.display;
+				this.model.ui.cartButton.style.display = 'none';
+			} else {
+				this.model.ui.cartButton.style.display = this.model.ui.cartButtonStyle || 'block';
+			}
+		}
+	}
 	closeApp() {
         this.fire('app:before:close');
         
@@ -162,8 +173,11 @@ class PrintAppClient {
 		this.fire('app:project:reset', { projectId: this.model.session.projectId });
 	}
 	updatePreviews() {
+		if (this.model.config && this.model.config.retainProductImages) return;
 		if (!this.model.env.previewsSelector) return;
-		const { previews } = this.model.session;
+
+		var previews = (this.model.session && this.model.session.previews) || this.model.env.previews;
+		if (typeof previews === 'string') previews = PrintAppClient.parse(previews);
 		const base = document.querySelector(this.model.env.previewsSelector);
 		if (!base || !previews || !previews.length) return;
 		base.innerHTML = `<div class="pa-previews"><div class="pa-previews-main">` +
@@ -189,6 +203,9 @@ class PrintAppClient {
 					this.model.ui.messageSource = event.source;
 					this.sendMsg(PrintAppClient.NAME, this.model.env);
 				break;
+				case 'app:ready':
+					this.fire(message.event, message.data);
+				break;
 				case 'app:saved':
 					this.model.state.saved = true;
 					this.saved(message.data);
@@ -203,7 +220,12 @@ class PrintAppClient {
 					this.closeApp();
 					this.setCommandPref();
 				break;
-				case 'auth:validation:failed':
+				case 'app:validation:success':
+					this.model.config = message.data.config;
+					this.fire(message.event, message.data);
+					this.handleCartBtn();
+				break;
+				case 'app:validation:failed':
 					this.unload(message.data);
 					this.fire(message.event, message.data);
 				break;
@@ -230,7 +252,10 @@ class PrintAppClient {
 		} catch (e) {  }
 	}
 
-	on (type, fnc) {
+	on (type, fnc) {	// proxy to addEventListener
+		this.addEventListener(type, fnc);
+	}
+	addEventListener (type, fnc) {
 		let handlers = this.handlers[type], i, len;
 		if (typeof handlers === 'undefined') handlers = this.handlers[type] = [];
 		for (i = 0, len = handlers.length; i < len; i++) {
@@ -239,7 +264,10 @@ class PrintAppClient {
 		handlers.push(fnc);
 	}
 
-	off (type, fnc) {
+	off (type, fnc) {		// proxy to removeEventListener
+		this.removeEventListener(type, fnc);
+	}
+	removeEventListener (type, fnc) {
 		let handlers = this.handlers[type], i, len;
 		if (handlers instanceof Array) {
 			for (i = 0, len = handlers.length; i < len; i++) {
@@ -262,7 +290,7 @@ class PrintAppClient {
 		}
 	}
 
-	static async comm(url, data, method = 'POST') {
+	static async comm(url, data, method = 'POST', useFormData = false) {
 		let cType, formData;
 			
 		if (data && method === 'GET') {
@@ -271,10 +299,17 @@ class PrintAppClient {
 				if (typeof data[_key] !== 'undefined' && data[_key] !== null) formData.push(encodeURIComponent(_key) + '=' + encodeURIComponent(data[_key]));
 			}
 			formData = formData.join('&').replace(/%20/g, '+');
-		}
-		if (method === 'POST' || method === 'PUT') {
-			cType = 'application/x-www-form-urlencoded';
-			if (data) formData = JSON.stringify(data);
+		} else if (method === 'POST' || method === 'PUT') {
+			if (useFormData) {
+				cType = 'multipart/form-data';
+				formData = new window.FormData();
+				for (let _key in data) {
+					if (typeof data[_key] !== 'undefined' && data[_key] !== null) formData.append(_key, data[_key]);
+				}
+			} else {
+				cType = 'application/x-www-form-urlencoded';
+				if (data) formData = JSON.stringify(data);
+			}
 		} else if (method === 'GET') {
 			cType = 'text/plain';
 			if (formData) url += `?${formData}`;
@@ -285,14 +320,14 @@ class PrintAppClient {
 		if (url.indexOf('https://') !== 0) url = `${PrintAppClient.ENDPOINTS.apiBase}${url}`;
 		
 		const   headers = new window.Headers();
-		headers.append('Content-Type', cType);
+		if (cType) headers.append('Content-Type', cType);
 		
 		window.fetch(url, { method: method, headers: headers, body: formData })
 			.then(d => {
 				return d ? PrintAppClient.parse(d) : d;
 			}).then(response => {
 				if (response && response.message && response.statusCode && response.statusCode > 299) return response.message;
-				if (typeof response.sessToken !== 'undefined') {
+				if (response && (typeof response.sessToken !== 'undefined')) {
 					Storage.setSessToken(response.sessToken);
 					delete response.sessToken;
 				}

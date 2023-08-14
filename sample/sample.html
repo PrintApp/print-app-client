@@ -1,53 +1,90 @@
 
 <html>
-	<title>Print.App Sample SDK</title>
+	<title>Print.App Custom integration sample</title>
     <head>
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1, shrink-to-fit=no">
+		<style>
+			#launch-button {
+				background-color: #4CAF50;
+				border: none;
+				color: white;
+				padding: 15px 32px;
+				text-align: center;
+				text-decoration: none;
+				display: inline-block;
+				font-size: 16px;
+				cursor: pointer;
+			}
+			#previews-div {
+				margin-top: 20px;
+			}
+			#previews-div img {
+				width: 100%;
+				max-width: 400px;
+				margin-bottom: 20px;
+			}
+		</style>
         <script src="https://editor.print.app/js/client.js"></script>
     </head>
     <body>
-		<button id="launch_btn" class="disabled:pointer-events-none disabled:opacity-50 p-2 px-6 m-4 rounded-full bg-slate-700 text-white hover:bg-slate-900" >Launch Designer</button>
-		<div id="pp_preview_div"></div>
+		<button id="launch-button" class="launch-button">Launch Designer</button>
+		<div id="previews-div"></div>
 	</body>
 	<script>
 		(function() {
+
 			//Get handles to the UI elements we'll be using
-			const	launchButton = document.getElementById('launch_btn'),
-					previewDiv = document.getElementById('pp_preview_div');
+			const	launchButton = document.getElementById('launch-button'),
+					previewDiv = document.getElementById('previews-div');
 				
-			//Disable the Launch button until PitchPrint is ready for use
+			//Disable the Launch button until Print.App is ready for use
 			launchButton.setAttribute('disabled', 'disabled');
 				
 				
-			/*Initialize Print.App
-				Kindly read more here on the options.. https://docs.pitchprint.com
-			*/
+			//	Initialize Print.App
+			//	Kindly read more here on the options.. https://docs.print.app
 			var printAppInstance = new PrintAppClient({
-				domainKey: 'dom_f80b84b4eb5cc81a140cb90f52e824f6',		//Kinldy provide your own APIKey
-				// designId: 'design_a9ffabf7-cd2c-4214-b758-7f7e6925e8b7',	//Change this to your designId
-				designId: 'design_c937efaa-4e9c-4bd7-bf3a-d6e0ea3e0e64',	//Change this to your designId
-				custom: true,
-				mode: 'new-project',
-			});
+					domainKey: 'dom_01H317ZJ3N5NNN1HBS3K7R76EN',		//Kinldy provide your own APIKey
+					designId: 'design_0c9419ea-62fd-45b8-929d-11cff5ae1e77',	//Change this to your designId
+					custom: true,
+					langCode: 'en',
+					mode: 'new-project',
+				});
 				
 			//Function to run once the app is validated (ready to be used)
 			var appReady = () => {
-				console.log('ready')
-				launchButton.removeAttribute('disabled');				//Enable the Launch button
-				launchButton.onclick = () => printAppInstance.showApp();		//Attach event listener to the button when clicked to show the app
+				console.log('editor is ready');
+
+				//	Enable the Launch button
+				launchButton.removeAttribute('disabled');
+				
+				//	Attach event listener to the button when clicked to show the app
+				launchButton.onclick = () => {
+					console.log('click')
+					printAppInstance.showApp()
+				};
 			};
 			
-			//Function to run once the user has saved their project
-			var projectSaved = (_val) => {
-				let _data = _val.data;									//You can console.log the _data varaible to see all that's passed down
-				if (_data && _data.previews && _data.previews.length) {
-					previewDiv.innerHTML = _data.previews.reduce((_str, _prev) => `${_str}<img src="${_prev}">`, '');		//Show the preview images
+			//	Function to run once the user has saved their project
+			var projectSaved = (value) => {
+				// You can console.log the data varaible to see all that's passed down
+				let { data } = value;
+				
+				if (data && data.previews && data.previews.length) {
+					// Show the preview images
+					let html = '';
+					for (let i = 0; i < data.previews.length; i++) {
+						html += `<img src="${data.previews[i]}">`;
+					}
+					previewDiv.innerHTML = html;
 				}
 			};
 			
-			//Attach events to the app. You can see a list of all the events here: https://docs.pitchprint.com
-			printAppInstance.on('app:ready', appReady);
-			printAppInstance.on('app:saved', projectSaved);
+			//	Attach events to the app.
+			//	You can see a list of all the events here: https://docs.print.app
+			printAppInstance.addEventListener('app:ready', appReady);
+			printAppInstance.addEventListener('app:saved', projectSaved);
+			
 		})();
 	</script>
 </html>
