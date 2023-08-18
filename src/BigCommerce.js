@@ -50,8 +50,17 @@ class PrintAppBigCommerce {
         window.pprintset = true;
         this.model.productId = productId;
 
+        // modifierId
+        let nodes = document.querySelectorAll('[name^="attribute["]');
+        if (nodes) nodes.forEach(node => {
+            if (node.parentNode?.textContent && node.parentNode.textContent.includes('print-app')) {
+                this.model.modifierId = node.name.split('[')[1].split(']')[0];
+                node.parentNode.style.display = 'none';
+            }
+        });
+
         const paData = await PrintAppBigCommerce.comm(`${PrintAppBigCommerce.ENDPOINTS.apiBase}check-product`, { storeId: this.model.storeId, productId, cart: 'bc' });
-        if (!paData || !paData.designId) {
+        if (!paData || !paData.designs || !paData.designs.length) {
             let sec = document.getElementById('pa-buttons');
             sec && sec.remove();
             return;
@@ -70,19 +79,13 @@ class PrintAppBigCommerce {
         
         let store = PrintAppBigCommerce.getStorage(PrintAppBigCommerce.STORAGEKEY);
         let currentValue = store[this.model.productId] || {};
-        
-        if (currentValue && currentValue.projectId) {
-        	var element = this.getElement();
-        	if (element) element.value = currentValue.projectId;
+        var element = this.getElement();
+
+        if (element) {
+            element.value = currentValue?.projectId ? currentValue.projectId : '';
+            if (element.parentNode?.style) element.parentNode.style.display = 'none';
         }
 
-        if (this.model.designData.modifierId) {
-            var selector = this.getElement();
-            if (selector) {
-                selector.value = '';
-                if (selector.parentNode) selector.parentNode.style.display = 'none';
-            }
-        }
 
         this.model.instance = new PrintAppClient({
             langCode: document.lastChild.getAttribute('lang') || 'en',
@@ -94,7 +97,7 @@ class PrintAppBigCommerce {
 			},
             client: 'bc',
             domainKey: `dom_bc_${this.model.storeId}`,
-            designId: this.model.designData && this.model.designData.designId,
+            designList: this.model.designData?.designs,
             mode: 'new-project',
             commandSelector: '#pa-buttons',
             previewsSelector: '[data-image-gallery]',
@@ -130,7 +133,7 @@ class PrintAppBigCommerce {
 
     }
     getElement() {
-        return document.querySelector(`[name="attribute[${this.model.designData.modifierId}]"]`);
+        return document.querySelector(`[name="attribute[${this.model.modifierId}]"]`);
     }
     static getStorage(key) {
         let r = window.localStorage.getItem(key);

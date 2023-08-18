@@ -140,7 +140,7 @@ class PrintAppClient {
 		this.fire('app:after:show');
 	}
 	handleCartBtn() {
-		if (this.model.config && this.model.config.forceCustomization && this.model.ui.cartButton) {
+		if (this.model?.config?.forceCustomization && this.model.ui.cartButton) {
 			if (this.model.state.mode === 'new-project') {
 				if (this.model.ui.cartButton.style.display != 'none') this.model.ui.cartButtonStyle = this.model.ui.cartButton.style.display;
 				this.model.ui.cartButton.style.display = 'none';
@@ -173,10 +173,10 @@ class PrintAppClient {
 		this.fire('app:project:reset', { projectId: this.model.session.projectId });
 	}
 	updatePreviews() {
-		if (this.model.config && this.model.config.retainProductImages) return;
+		if (this.model?.config?.retainProductImages) return;
 		if (!this.model.env.previewsSelector) return;
 
-		var previews = (this.model.session && this.model.session.previews) || this.model.env.previews;
+		var previews = (this.model?.session?.previews) || this.model.env.previews;
 		if (typeof previews === 'string') previews = PrintAppClient.parse(previews);
 		const base = document.querySelector(this.model.env.previewsSelector);
 		if (!base || !previews || !previews.length) return;
@@ -326,7 +326,7 @@ class PrintAppClient {
 			.then(d => {
 				return d ? PrintAppClient.parse(d) : d;
 			}).then(response => {
-				if (response && response.message && response.statusCode && response.statusCode > 299) return response.message;
+				if (response?.message?.statusCode && response.statusCode > 299) return response.message;
 				if (response && (typeof response.sessToken !== 'undefined')) {
 					Storage.setSessToken(response.sessToken);
 					delete response.sessToken;
@@ -365,7 +365,7 @@ class PrintAppClient {
 			.pa-frame.pa-shown{ display: block; z-index: 999999999; pointer-events: auto; transform: scale(1); filter: brightness(0.6); }
 			.pa-frame.pa-shown.pa-modal{ left:0; top: 0; right:0; bottom: 0; width: 100vw; height: 100vh; }
 			.pa-commands { display: flex; flex-direction: column; gap: 10px; }
-			.pa-commands>*{ max-width: 18rem; margin-left: 0; }
+			.pa-commands>*{ max-width: 35rem; margin-left: 0; }
 			.pa-previews{ width:100%; height: 100%; overflow-x: auto; }
 			.pa-previews>.pa-previews-main{ white-space: nowrap; }
 			.pa-previews>.pa-previews-main>div{ display: inline-block; }
