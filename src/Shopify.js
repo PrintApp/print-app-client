@@ -38,7 +38,7 @@ class PrintAppShopify {
     async check() {
         if (window.pprintset) return;
 
-        this.model.cartForm = document.querySelector(PrintAppShopify.SELECTORS.cartForm);
+        this.model.cartForm = PrintAppShopify.queryPrioritySelector(PrintAppShopify.SELECTORS.cartForm);
         if (!this.model.cartForm) return;
 
         this.model.cartForm.insertAdjacentHTML('afterbegin', `<div id="pa-buttons"><img src="${PrintAppShopify.ENDPOINTS.baseCdn}assets/images/loader.svg"style="width:2rem"></div>`);
@@ -77,15 +77,31 @@ class PrintAppShopify {
             client: 'sp',
             domainKey: `dom_sp_${this.model.storeId}`,
             designList: this.model.designData?.designs,
-            mode: 'new-project',
+            projectId: currentValue.projectId,
+            mode: currentValue.projectId ? 'edit-project' : 'new-project',
             commandSelector: '#pa-buttons',
             previewsSelector: PrintAppShopify.SELECTORS.previews,
         });
         
 		this.model.clientMounted = true;
 		this.model.instance.on('app:saved', data => this.projectSaved(data));
+		this.model.instance.on('app:project:reset', data => this.clearProject(data));
     }
 
+    clearProject(value) {
+        const { projectId } = value;
+        let store = PrintAppShopify.getStorage(PrintAppShopify.STORAGEKEY),
+        	projects = PrintAppShopify.getStorage(PrintAppShopify.PROJECTSKEY),
+            element = this.getElement();
+
+        if (element) element.value = '';
+        delete store[this.model.productId];
+        delete projects[projectId];
+
+        window.localStorage.setItem(PrintAppShopify.STORAGEKEY, JSON.stringify(store));
+	    window.localStorage.setItem(PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
+	    window.location.reload();
+    }
     projectSaved(value) {
         const { data } = value;
         
@@ -208,6 +224,16 @@ class PrintAppShopify {
                     });
         if (!(response instanceof Error)) return response;
 	}
+
+    static queryPrioritySelector(selectors) {
+
+        const list = (typeof selectors === 'string') ? selectors.split(',') : selectors;
+        for (let selector of list) {
+            const element = document.querySelector(selector);
+            if (element) return element;
+        }
+        return null;
+    }
 	
 }
 
