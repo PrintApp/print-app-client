@@ -135,31 +135,33 @@ class PrintAppShopify {
         return r || {};
     }
 
-
     async setCartImages() {
-    	// var params = { include: 'lineItems.digitalItems.options,lineItems.physicalItems.options' },
-        //     element = document.querySelectorAll('.cart-item-figure');
-        
-        // const data = await PrintAppBigCommerce.comm(`${window.location.protocol}//${window.location.host}/api/storefront/carts`, params, 'GET').catch(console.log);
-        // if (!Array.isArray(data)) return;
-        // const projects = PrintAppBigCommerce.getStorage(PrintAppBigCommerce.PROJECTSKEY);
+        const data = await PrintAppShopify.comm(`/cart.js`, null, 'GET').catch(console.log);
+        if (!data || !data.items) return;
 
-        // data.forEach(cart  => {
-        //     if(cart && cart.lineItems) {
-        //         cart.lineItems.physicalItems.forEach((lineItem, idx) => {
-        //             if(lineItem.options) {
-        //                 var options = lineItem.options;
-        //                 options.forEach(opt => {
-        //                     if(opt.name === "print-app") {
-        //                         let v = projects[opt.value];
-        //                         element[idx].querySelector('IMG').src = v.previews[0].url;
-        //                         element[idx].querySelector('IMG').srcset = v.previews[0].url;
-        //                     }
-        //                 })
-        //             }
-        //         })
-        //     }
-        // })
+        if (data.items) {
+            var value, string,
+                elements = document.querySelectorAll('[data-cart-line], .cart-item, .cart__item'),
+                imageSelector = '.line-item__image-wrapper > .aspect-ratio, .cart-line-image,.product_image,.cart_image,.product-image,.cpro_item_inner,.cart__image,.cart-image,.cart-item .image,.cart-item__image-container,.cart_page_image,.tt-cart__product_image,.CartItem__ImageWrapper,div.description.cf > a,.product-img, .cart-item-wrapper>.cart-item-block-left .cart-item-image img, .order-summary__body>tr>td>.line-item>.line-item__media-wrapper, .image-wrap>image-element>.image-element',
+                images = document.querySelectorAll(imageSelector);
+            const projects = PrintAppShopify.getStorage(PrintAppShopify.PROJECTSKEY);
+            
+            data.items.forEach((item, index) => {
+                if (item?.properties?.['_printapp']) {
+                    value = projects[item.properties['_printapp']];
+                    console.log('value', value);
+                    string = `<div><img src="${value.previews[0].url}" width="94" style="margin: 5px; opacity: 1"><br/></div>`;
+                    let img = images[index];
+                    if (img) {
+                        if (img.tagName === 'IMG') {
+                            img.parentNode.innerHTML = string;
+                        } else {
+                            img.innerHTML = string;
+                        }
+                    }
+                }
+            });
+        }
     }
 
     static async loadTag(url) {

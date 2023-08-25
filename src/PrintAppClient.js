@@ -364,7 +364,7 @@ class PrintAppClient {
 			.pa-frame{ overflow: hidden; border: none; z-index: -10; position: fixed; pointer-events: none; transform: scale(0); filter: brightness(0.6); transition: transform .3s ease-out .2s, filter .3s ease-out .4s; }
 			.pa-frame.pa-shown{ display: block; z-index: 999999999; pointer-events: auto; transform: scale(1); filter: brightness(0.6); }
 			.pa-frame.pa-shown.pa-modal{ left:0; top: 0; right:0; bottom: 0; width: 100vw; height: 100vh; }
-			.pa-commands { display: flex; flex-direction: column; gap: 10px; }
+			.pa-commands { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
 			.pa-commands>*{ max-width: 35rem; margin-left: 0; }
 			.pa-previews{ width:100%; height: 100%; overflow-x: auto; }
 			.pa-previews>.pa-previews-main{ white-space: nowrap; }
