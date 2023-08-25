@@ -95,7 +95,7 @@ class PrintAppBigCommerce {
 				title: this.model.title,
 				url: window.location.href
 			},
-            client: 'bc',
+            framework: 'bc',
             domainKey: `dom_bc_${this.model.storeId}`,
             designList: this.model.designData?.designs,
             mode: 'new-project',

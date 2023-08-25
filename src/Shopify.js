@@ -74,7 +74,7 @@ class PrintAppShopify {
 				title: this.model.title,
 				url: window.location.href
 			},
-            client: 'sp',
+            framework: 'sp',
             domainKey: `dom_sp_${this.model.storeId}`,
             designList: this.model.designData?.designs,
             projectId: currentValue.projectId,
