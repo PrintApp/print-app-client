@@ -74,14 +74,15 @@ class PrintAppClient {
 
 		if (document.body) document.body.appendChild(frame);
 
-		frame.classList.add('pa-frame');
-		frame.classList.add(this.model.ui.displayMode || 'pa-modal');
+		frame.classList.add('printapp-frame');
+		frame.classList.add(this.model.ui.displayMode || 'printapp-modal');
         return frame;
 	}
 	async createCommandUI() {
 		this.model.ui.base = document.querySelector(this.model.env.commandSelector || '#pa-buttons');
 		if (!this.model.ui.base) return;
 		await PrintAppClient.loadTag(`https://editor.print.app/js/rivets.bundled.min.js`);		// bundle with client..
+		if (!window.rivets) return console.error('Rivets not loaded');
 
 		this.model.ui.commands = {
 			lang: {
@@ -100,12 +101,12 @@ class PrintAppClient {
 				this.clearDesign();
 			}
 		};
-		this.model.ui.base.innerHTML = `<div class="pa-commands">
+		this.model.ui.base.innerHTML = `<div class="printapp-commands">
 					<button rv-unless="resume" rv-on-click="customize_click" class="button">{lang.customize}</button>
 					<button rv-if="resume" rv-on-click="customize_click" class="button">{lang.resume}</button>
 					<button rv-if="clear" rv-on-click="clear_click" class="button">{lang.clear}</button>
 					<div>`;
-		rivets.bind(this.model.ui.base, this.model.ui.commands);
+		window.rivets.bind(this.model.ui.base, this.model.ui.commands);
 		this.setCommandPref();
 		this.updatePreviews();
 	}
@@ -131,7 +132,7 @@ class PrintAppClient {
 		document.body.style.overflow = document.documentElement.style.overflow = 'hidden';
         document.body.style.position = 'relative';
 
-		this.model.ui.frame.classList.add('pa-shown');
+		this.model.ui.frame.classList.add('printapp-shown');
 		setTimeout(_ => this.model.ui.frame.style.filter = 'none', 1000);
 		this.model.state.shown = true;
 		this.sendMsg('app:show');
@@ -152,7 +153,7 @@ class PrintAppClient {
 	closeApp() {
         this.fire('app:before:close');
         
-		this.model.ui.frame.classList.remove('pa-shown');
+		this.model.ui.frame.classList.remove('printapp-shown');
 		if (this.model.act.bodyStyles) {
 			document.body.style.overflow = this.model.act.bodyStyles.overflow;
             document.body.style.position = this.model.act.bodyStyles.position;
@@ -174,15 +175,27 @@ class PrintAppClient {
 	}
 	updatePreviews() {
 		if (this.model?.config?.retainProductImages) return;
-		if (!this.model.env.previewsSelector) return;
+		if (!this.model?.env?.previewsSelector) return;
 
 		var previews = (this.model?.session?.previews) || this.model.env.previews;
 		if (typeof previews === 'string') previews = PrintAppClient.parse(previews);
-		const base = document.querySelector(this.model.env.previewsSelector);
-		if (!base || !previews || !previews.length) return;
-		base.innerHTML = `<div class="pa-previews"><div class="pa-previews-main">` +
-							previews.map(p => `<div><img src="${p.url}"/></div>`).join('')
-						+ `</div></div>`;
+
+		const previewBase = document.querySelector(this.model.env.previewsSelector);
+		if (!previewBase || !previews || !previews.length) return;
+
+		previewBase.innerHTML =
+			`<div class="printapp-previews">
+				<div class="printapp-previews-main">
+					<img src="${previews[0].url}"/>
+				</div>
+				<div class="printapp-previews-thumbnails">
+					${(previews.length > 1) ? previews.map(p => `<div><img src="${p.url}" onclick="if (window.printAppInstance) window.printAppInstance.changeMainPreviewImage(this.src)"/></div>`).join('') : ''}
+				</div>
+			</div>`;
+	}
+	changeMainPreviewImage(newSrc) {
+		const mainImage = document.querySelector('.printapp-previews-main img');
+		if (mainImage) mainImage.src = newSrc;
 	}
 	sendMsg(event, data, handle) {
 		const message = JSON.stringify({ event, data });
@@ -361,15 +374,69 @@ class PrintAppClient {
     }
 	addStyling() {
 		const styling = `
-			.pa-frame{ overflow: hidden; border: none; z-index: -10; position: fixed; pointer-events: none; transform: scale(0); filter: brightness(0.6); transition: transform .3s ease-out .2s, filter .3s ease-out .4s; }
-			.pa-frame.pa-shown{ display: block; z-index: 999999999; pointer-events: auto; transform: scale(1); filter: brightness(0.6); }
-			.pa-frame.pa-shown.pa-modal{ left:0; top: 0; right:0; bottom: 0; width: 100vw; height: 100vh; }
-			.pa-commands { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
-			.pa-commands>*{ max-width: 35rem; margin-left: 0; }
-			.pa-previews{ width:100%; height: 100%; overflow-x: auto; }
-			.pa-previews>.pa-previews-main{ white-space: nowrap; }
-			.pa-previews>.pa-previews-main>div{ display: inline-block; }
+			.printapp-frame{ overflow: hidden; border: none; z-index: -10; position: fixed; pointer-events: none; transform: scale(0); filter: brightness(0.6); transition: transform .3s ease-out .2s, filter .3s ease-out .4s; }
+			.printapp-frame.printapp-shown{ display: block; z-index: 999999999; pointer-events: auto; transform: scale(1); filter: brightness(0.6); }
+			.printapp-frame.printapp-shown.printapp-modal{ left:0; top: 0; right:0; bottom: 0; width: 100vw; height: 100vh; }
+			.printapp-commands { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
+			.printapp-commands>*{ max-width: 35rem; margin-left: 0; }
+			
+			.printapp-previews {
+				width: 100%;
+				height: 100%;
+				overflow: hidden;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+			}
+			  
+			.printapp-previews > .printapp-previews-main {
+				max-width: 90%;
+				max-height: 70%;
+				white-space: nowrap;
+				margin-bottom: 20px;
+			}
+			  
+			.printapp-previews > .printapp-previews-main > img {
+				max-width: 100%;
+				max-height: 100%;
+				display: block;
+			}
+			  
+			.printapp-previews > .printapp-previews-thumbnails {
+				display: flex;
+				height: 100px;
+				justify-content: flex-start;
+				align-items: center;
+				overflow-x: auto;
+				overflow-y: hidden;
+				white-space: nowrap;
+			}
+			
+			.printapp-previews > .printapp-previews-thumbnails::-webkit-scrollbar {
+				width: 10px;
+			}
+			
+			.printapp-previews > .printapp-previews-thumbnails::-webkit-scrollbar-thumb {
+				background-color: darkgrey;
+				outline: 1px solid slategrey;
+			}
+			  
+			.printapp-previews > .printapp-previews-thumbnails > div {
+				width: 100px;
+				height: 100px;
+				margin: 0 5px;
+				cursor: pointer;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+			}
+			  
+			.printapp-previews > .printapp-previews-thumbnails > div > img {
+				max-width: 100%;
+				max-height: 100%;
+			}			  
 		`;
+
 		const tag = document.createElement('style');
 		tag.setAttribute('type', 'text/css');
 		tag.appendChild(document.createTextNode(styling));
