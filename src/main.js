@@ -83,55 +83,54 @@
 		async createCommandUI() {
 			this.model.ui.base = document.querySelector(this.model.env.commandSelector || '#pa-buttons');
 			if (!this.model.ui.base) return;
-			await PrintAppClient.loadTag(`https://editor.print.app/js/rivets.bundled.min.js`);		// bundle with client..
-			if (!window.rivets) return console.error('Rivets not loaded');
+			await PrintAppClient.loadTag(`https://editor.print.app/js/petite-vue.js`);
+	
+			// Using Petite-Vue's syntax for data binding
+			this.model.ui.base.innerHTML = `
+			<div id="print-app-container" class="printapp-commands" v-scope>
+				<button v-if="buttons.showCustomize" @click.prevent.stop="showApp" class="button">{{lang[ buttons.editMode ? 'resume' : 'customize' ]}}</button>
+				<button v-if="buttons.showClear" @click.prevent.stop="clearDesign" class="button">{{lang.clear}}</button>
+			</div>`;
 
-			this.model.ui.commands = {
+			this.ui = PetiteVue.reactive({
 				lang: {
 					customize: 'Personalise Design',
 					resume: 'Resume Design',
 					clear: 'Clear Design',
 				},
-				customize_click: (e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					this.showApp();
+				buttons: {
+					showCustomize: true,
+					showClear: false,
+					editMode: false,
 				},
-				clear_click: (e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					this.clearDesign();
-				}
-			};
+				showApp: this.showApp.bind(this),
+				clearDesign: this.clearDesign.bind(this)
+			})
 
-			this.model.ui.base.innerHTML = `<div class="printapp-commands">
-						<button rv-if="showCustomize" rv-on-click="customize_click" class="button">{lang.customize}</button>
-						<button rv-if="resume" rv-on-click="customize_click" class="button">{lang.resume}</button>
-						<button rv-if="clear" rv-on-click="clear_click" class="button">{lang.clear}</button>
-						<div>`;
-			window.rivets.bind(this.model.ui.base, this.model.ui.commands);
-			this.setCommandPref();
-			this.updatePreviews();
+			PetiteVue.createApp(this.ui).mount('#print-app-container')
+		
+			this.setCommandPref()
+			this.updatePreviews()
 		}
+		
 		setCommandPref() {
 			if (this.model.state.shown && ['mini', 'inline'].includes(this.model.ui.displayMode)) {
-				this.model.ui.commands.showCustomize = false;
-				this.model.ui.commands.resume = false;
-				this.model.ui.commands.clear = this.model.state.mode === 'edit-project';
+				this.ui.buttons.showCustomize = false;
+				this.ui.buttons.editMode = false;
+				this.ui.buttons.showClear = this.model.state.mode === 'edit-project';
 				return;
 			}
 
 			switch (this.model.state.mode) {
 				case 'edit-project':
-					this.model.ui.commands.resume = true;
-					this.model.ui.commands.clear = true;
-					this.model.ui.commands.showCustomize = false;
+					this.ui.buttons.showCustomize = true;
+					this.ui.buttons.editMode = true;
+					this.ui.buttons.showClear = true;
 				break;
 				default:
-				case 'new-project':
-					this.model.ui.commands.showCustomize = true;
-					this.model.ui.commands.resume = false;
-					this.model.ui.commands.clear = false;
+					this.ui.buttons.showCustomize = true;
+					this.ui.buttons.editMode = false;
+					this.ui.buttons.showClear = false;
 				break;
 			}
 		}
@@ -342,6 +341,9 @@
 						this.unload(message.data);
 						this.fire(message.event, message.data);
 					break;
+					case 'element:create':
+						this.createElement(message.data)
+					break;
 					case 'element:listen':
 						this.hookElement(message.data)
 					break;
@@ -368,6 +370,24 @@
 					element.value = data.value;
 				break;
 			}
+		}
+
+		createElement(data) {
+			if (!data) return;
+			let element = '';
+			switch (data.type || data._type) {
+				case 'label':
+					element = `<label style="margin-bottom:5px">${data.value}</label><br/>`
+				break;
+				case 'pagesUpload':
+					element = `<button style="margin-bottom:5px" class="button">Upload File</button><br/>`
+				break;
+				case 'size':
+					element = `<select style="margin-bottom:5px"><option value="A4">A4</option><option value="A3">A3</option><option value="A3">A2</option><option value="A3">A1</option></select><br/>`
+				break;
+			}
+			console.log(data, element);
+			jQuery('#pa-buttons').prepend(element);
 		}
 
 		hookElement(data) {
@@ -526,7 +546,7 @@
 			};
 		}
 
-		static async loadTag(url) {
+		static async loadTag(url, attrs = {}) {
 			return new Promise((resolve) => {
 				var tag;
 				if (url.endsWith('.css')) {
@@ -536,8 +556,9 @@
 					tag.href = url;
 				} else if (url.endsWith('.js')) {
 					tag = document.createElement('script');
-					if (document.head) document.head.appendChild(tag);
-					tag.src = url;
+					if (document.head) document.head.appendChild(tag)
+					for (let attr in attrs) tag.setAttribute(attr, attrs[attr]);
+					tag.src = url
 				}
 				tag.onload = resolve;
 			})
@@ -581,7 +602,6 @@
 					top: 0;
 					left: 0;
 					position: absolute;
-					border-bottom: 1px solid #64748b4d;
 				}
 				.printapp-display-mini-div {
 					width: 100%;
