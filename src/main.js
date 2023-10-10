@@ -87,10 +87,34 @@
 	
 			// Using Petite-Vue's syntax for data binding
 			this.model.ui.base.innerHTML = `
-			<div id="print-app-container" class="printapp-commands" v-scope>
-				<button v-if="buttons.showCustomize" @click.prevent.stop="showApp" class="button">{{lang[ buttons.editMode ? 'resume' : 'customize' ]}}</button>
-				<button v-if="buttons.showClear" @click.prevent.stop="clearDesign" class="button">{{lang.clear}}</button>
-			</div>`;
+				<div id="print-app-container" class="printapp-commands" v-scope>
+					<div class="printapp-commands-items">
+						<div v-for="item in items" class="printapp-commands-item">
+							<div v-if="item.type === 'label'" class="label">
+								<label>{{item.title}}</label>
+							</div>
+							<div v-if="item.type === 'button'">
+								<button :data-cmd="item.id" class="button">{{item.title}}</button>
+							</div>
+							<div v-if="item.type === 'input'">
+								<label>{{item.title}}</label>
+								<input :type="item.inputType" :name="item.id" :placeholder="item.placeholder" :value="item.value" />
+							</div>
+							<div v-if="item.type === 'textarea'">
+								<label>{{item.title}}</label>
+								<textarea :row="item.rows" :placeholder="item.placeholder" :value="item.value"></textarea>
+							</div>
+							<div v-if="item.type === 'select'">
+								<label>{{item.title}}</label>
+								<select :value="item.value">
+									<option v-for="option in item.options" :value="option.value">{{option.text || option.value}}</option>
+								</select>
+							</div>
+						</div>
+					</div>
+					<button v-if="buttons.showCustomize" @click.prevent.stop="showApp" class="button">{{lang[ buttons.editMode ? 'resume' : 'customize' ]}}</button>
+					<button v-if="buttons.showClear" @click.prevent.stop="clearDesign" class="button">{{lang.clear}}</button>
+				</div>`
 
 			this.ui = PetiteVue.reactive({
 				lang: {
@@ -103,6 +127,7 @@
 					showClear: false,
 					editMode: false,
 				},
+				items: [],
 				showApp: this.showApp.bind(this),
 				clearDesign: this.clearDesign.bind(this)
 			})
@@ -664,7 +689,20 @@
 				.printapp-previews > .printapp-previews-thumbnails > div > img {
 					max-width: 100%;
 					max-height: 100%;
-				}			  
+				}
+				.printapp-commands-items {
+					display: flex;
+					flex-direction: column;
+					gap: 1rem;
+				}
+				.printapp-commands-items > .printapp-commands-item > div {
+					display: flex;
+					flex-direction: column;
+					gap: 0.5rem;
+				}
+				.printapp-commands-items .label {
+					font-weight: bold;
+				}	  
 			`;
 
 			const tag = document.createElement('style');
