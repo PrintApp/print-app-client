@@ -98,7 +98,7 @@
 							</div>
 							<div v-if="item.type === 'input'">
 								<label>{{item.title}}</label>
-								<input :type="item.inputType" :name="item.id" :placeholder="item.placeholder" :value="item.value" />
+								<input class="input" :type="item.inputType" :name="item.id" :placeholder="item.placeholder" :value="item.value" />
 							</div>
 							<div v-if="item.type === 'textarea'">
 								<label>{{item.title}}</label>
@@ -109,6 +109,17 @@
 								<select :value="item.value">
 									<option v-for="option in item.options" :value="option.value">{{option.text || option.value}}</option>
 								</select>
+							</div>
+							<div v-if="item.type === 'switch'">
+								<label :for="item.id">{{item.title}}</label>
+								<input type="checkbox" :name="item.id" :value="item.value" />
+							</div>
+							<div v-if="item.type === 'option'">
+								<label>{{item.title}}</label>
+								<div v-for="option in item.options" class="option">
+									<input type="radio" :name="option.id" :value="option.value" />
+									<label :for="option.id"></label>
+								</div>
 							</div>
 						</div>
 					</div>
