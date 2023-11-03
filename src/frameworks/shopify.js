@@ -1,6 +1,7 @@
 
-
-    class PrintAppShopify {
+if (typeof this.PrintAppShopify === "undefined") {
+    
+    this.PrintAppShopify = class {
         static NAME = 'print-app-shopify';
         static VERSION = '0.1';
         static STORAGEKEY = 'print-app-sp';
@@ -241,8 +242,10 @@
         
     }
 
+}
 
-    (function(global) {
+(function(global) {
+    if (!global.printAppPrintShopifyInstance) {
         let params = {
             productPage: window.location.pathname.includes('/products'),
             cartPage: window.location.pathname.includes('/cart'),
@@ -253,5 +256,6 @@
             productId: window.__st.rid,
         };
         global.printAppPrintShopifyInstance = global.printAppPrintShopifyInstance || new PrintAppShopify(params);
+    }
 
-    })(this);
+})(this);

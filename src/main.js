@@ -89,58 +89,71 @@
 			this.model.ui.base.innerHTML = `
 				<div id="print-app-container" class="printapp-commands" v-scope>
 					<div class="printapp-commands-items">
-						<div v-for="item in items" class="printapp-commands-item">
+						<div  v-for="item in items" class="printapp-commands-item">
 							<div v-if="item.type === 'label'" class="label">
 								<label>{{item.title}}</label>
 							</div>
-							<div v-if="item.type === 'button'">
-								<button :data-cmd="item.id" class="button">{{item.title}}</button>
+							<div v-if="['button', 'upload'].includes(item.type)">
+								<button @click.prevent.stop="clickEvt" :data-cmd="item.id" :name="item.id" class="button">{{item.title}}</button>
 							</div>
 							<div v-if="item.type === 'input'">
-								<label>{{item.title}}</label>
-								<input class="input" :type="item.inputType" :name="item.id" :placeholder="item.placeholder" :value="item.value" />
+								<label>{{item.title}}:</label>
+								<input @input="inputEvt" class="input" :type="item.inputType" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value" />
+							</div>
+							<div v-if="item.type === 'number'">
+								<label>{{item.title}}:</label>
+								<input @input="inputEvt" class="input" type="number" :name="item.id" :max="item.maxValue" :min="item.minValue" :type="item.inputType" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value" />
 							</div>
 							<div v-if="item.type === 'textarea'">
-								<label>{{item.title}}</label>
-								<textarea :row="item.rows" :placeholder="item.placeholder" :value="item.value"></textarea>
+								<label>{{item.title}}:</label>
+								<textarea @input="inputEvt" :row="item.rows" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value"></textarea>
 							</div>
-							<div v-if="item.type === 'select'">
-								<label>{{item.title}}</label>
-								<select :value="item.value">
-									<option v-for="option in item.options" :value="option.value">{{option.text || option.value}}</option>
+							<div @change="changeEvt" v-if="item.type === 'select'">
+								<label>{{item.title}}:</label>
+								<select :value="item.value" :name="item.id">
+									<option v-for="option in item.options" v-model="option.value">{{option.title || option.value}}</option>
 								</select>
 							</div>
-							<div v-if="item.type === 'switch'">
+							<div @change="changeEvt" v-if="item.type === 'switch'" class="switch-div">
 								<label :for="item.id">{{item.title}}</label>
-								<input type="checkbox" :name="item.id" :value="item.value" />
+								<label class="switch">
+									<input :name="item.id" v-model="item.value" type="checkbox" />
+									<span class="slider"></span>
+								</label>
 							</div>
-							<div v-if="item.type === 'option'">
-								<label>{{item.title}}</label>
+							<div @change="changeEvt" v-if="item.type === 'option'">
+								<label>{{item.title}}:</label>
 								<div v-for="option in item.options" class="option">
-									<input type="radio" :name="option.id" :value="option.value" />
+									<input type="radio" :name="option.id" v-model="option.value" />
 									<label :for="option.id"></label>
 								</div>
 							</div>
 						</div>
 					</div>
 					<button v-if="buttons.showCustomize" @click.prevent.stop="showApp" class="button">{{lang[ buttons.editMode ? 'resume' : 'customize' ]}}</button>
+					<button v-if="buttons.showUpload" @click.prevent.stop="showApp" data-cmd="artwork" class="button">{{lang.upload_artwork}}</button>
 					<button v-if="buttons.showClear" @click.prevent.stop="clearDesign" class="button">{{lang.clear}}</button>
 				</div>`
 
 			this.ui = PetiteVue.reactive({
 				lang: {
 					customize: 'Personalise Design',
+					upload_artwork: 'Upload your Artwork',
 					resume: 'Resume Design',
 					clear: 'Clear Design',
 				},
 				buttons: {
 					showCustomize: true,
+					showUpload: false,
 					showClear: false,
 					editMode: false,
 				},
 				items: [],
 				showApp: this.showApp.bind(this),
-				clearDesign: this.clearDesign.bind(this)
+				clearDesign: this.clearDesign.bind(this),
+				clickEvt: this.controlClick.bind(this),
+				changeEvt: this.controlChange.bind(this),
+				inputEvt: this.controlInput.bind(this),
 			})
 
 			PetiteVue.createApp(this.ui).mount('#print-app-container')
@@ -148,13 +161,46 @@
 			this.setCommandPref()
 			this.updatePreviews()
 		}
+
+		controlClick(event) {
+			let id = event?.target?.name,
+				item = this.ui.items.find(i => i.id === id);
+
+			this.sendMsg('control:change', { eventType: 'click', data: item });
+		}
+		controlChange(event) {
+			let id = event?.target?.name,
+				item = this.ui.items.find(i => i.id === id);
+
+			this.sendMsg('control:change', { eventType: 'change', data: item });
+		}
+		controlInput(event) {
+			let id = event?.target?.name,
+				item = this.ui.items.find(i => i.id === id);
+
+			this.sendMsg('control:change', { eventType: 'input', data: item })
+		}
+
+		createControl(data) {
+			if (!data?.type) return;
+			this.ui.items.push(data);
+		}
 		
 		setCommandPref() {
 			if (this.model.state.shown && ['mini', 'inline'].includes(this.model.ui.displayMode)) {
 				this.ui.buttons.showCustomize = false;
+				this.ui.buttons.showUpload = false;
 				this.ui.buttons.editMode = false;
-				this.ui.buttons.showClear = this.model.state.mode === 'edit-project';
+				this.ui.buttons.showClear = this.model.state.mode === 'edit-project'
 				return;
+			}
+
+			if (this.model?.env?.artwork?.id?.length) {
+				this.ui.buttons.showUpload = true;
+				if (!this.model.env?.designList?.length)
+					return this.ui.buttons.showCustomize = false;
+			} else {
+				this.ui.buttons.showUpload = false;
 			}
 
 			switch (this.model.state.mode) {
@@ -170,7 +216,16 @@
 				break;
 			}
 		}
-		showApp() {
+		syncLang(data) {
+			if (!data || typeof data !== 'object') return;
+			this.model.lang = data;
+			if (this?.ui?.lang) {
+				for (const key in this.ui.lang) {
+					if (this.model.lang[key]) this.ui.lang[key] = this.model.lang[key];
+				}
+			}
+		}
+		showApp(event) {
 			this.fire('app:before:show');
 			this.model.act.bodyStyles = {
 				overflow: document.body.style.overflow,
@@ -196,7 +251,9 @@
 			setTimeout(_ => this.model.ui.frame.style.filter = 'none', 1e3);
 			this.model.state.shown = true;
 			this.adjustFramePos();
-			this.sendMsg('app:show');
+			this.sendMsg('app:show', {
+				artwork: event?.target?.dataset?.cmd === 'artwork',
+			});
 			this.setCommandPref();
 
 			this.fire('app:after:show');
@@ -377,14 +434,17 @@
 						this.unload(message.data);
 						this.fire(message.event, message.data);
 					break;
-					case 'element:create':
-						this.createElement(message.data)
+					case 'control:create':
+						this.createControl(message.data)
 					break;
 					case 'element:listen':
 						this.hookElement(message.data)
 					break;
 					case 'element:update':
 						this.updateElement(message.data)
+					break;
+					case 'lang:set':
+						this.syncLang(message.data)
 					break;
 					default:
 						this.fire(message.event, message.data);
@@ -406,24 +466,6 @@
 					element.value = data.value;
 				break;
 			}
-		}
-
-		createElement(data) {
-			if (!data) return;
-			let element = '';
-			switch (data.type || data._type) {
-				case 'label':
-					element = `<label style="margin-bottom:5px">${data.value}</label><br/>`
-				break;
-				case 'pagesUpload':
-					element = `<button style="margin-bottom:5px" class="button">Upload File</button><br/>`
-				break;
-				case 'size':
-					element = `<select style="margin-bottom:5px"><option value="A4">A4</option><option value="A3">A3</option><option value="A3">A2</option><option value="A3">A1</option></select><br/>`
-				break;
-			}
-			console.log(data, element);
-			jQuery('#pa-buttons').prepend(element);
 		}
 
 		hookElement(data) {
@@ -705,15 +747,73 @@
 					display: flex;
 					flex-direction: column;
 					gap: 1rem;
+					padding-bottom: 1rem;
 				}
 				.printapp-commands-items > .printapp-commands-item > div {
 					display: flex;
 					flex-direction: column;
-					gap: 0.5rem;
 				}
-				.printapp-commands-items .label {
+				.printapp-commands-items label {
 					font-weight: bold;
-				}	  
+					text-transform: capitalize;
+				}
+				.printapp-commands-items .input {
+					padding: 10px 8px;
+				}
+				.switch-div {
+					flex-direction: row !important;
+					align-items: center;
+					gap: 1rem;
+				}
+				.switch-div > .switch {
+					position: relative;
+					display: inline-block;
+					width: 60px;
+					height: 34px;
+				}
+				.switch-div > .switch input {
+					opacity: 0;
+					width: 0;
+					height: 0;
+				}
+				.switch-div > .switch span {
+					position: absolute;
+					cursor: pointer;
+					top: 0;
+					left: 0;
+					right: 0;
+					bottom: 0;
+					background-color: #ccc;
+					-webkit-transition: .4s;
+					transition: .4s;
+					border-radius: 34px;
+				}
+				.switch-div > .switch > span:before {
+					position: absolute;
+					content: "";
+					height: 26px;
+					width: 26px;
+					left: 4px;
+					bottom: 4px;
+					background-color: white;
+					-webkit-transition: .4s;
+					transition: .4s;
+					border-radius: 34px;
+				}
+				.switch-div > .switch input:checked + .slider {
+					background-color: #2196F3;
+				}
+				
+				.switch-div > .switch input:focus + .slider {
+					box-shadow: 0 0 1px #2196F3;
+				}
+				
+				.switch-div > .switch input:checked + .slider:before {
+					-webkit-transform: translateX(26px);
+					-ms-transform: translateX(26px);
+					transform: translateX(26px);
+				}
+				
 			`;
 
 			const tag = document.createElement('style');
