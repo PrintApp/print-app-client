@@ -64,6 +64,7 @@
 			this.createCommandUI();
 			this.model.ui.cartButton = document.querySelector(this.SELECTORS.cartButton);
 			this.model.act.uiCreated = true;
+			this.runCustomScripts();
 			this.fire('ui:created');
 			window.addEventListener('resize', () => this.adjustFramePos())
 		}
@@ -80,10 +81,30 @@
 			frame.classList.add('printapp-display-modal');
 			return frame;
 		}
+
+		runCustomScripts() {
+			if (this.model?.env?.settings?.customCss) {
+				const tag = document.createElement('style');
+				tag.setAttribute('type', 'text/css');
+				tag.appendChild(document.createTextNode(this.model.env.settings.customCss));
+				if (document.head) document.head.appendChild(tag);
+			}
+			if (this.model?.env?.settings?.customJs) {
+				const tag = document.createElement('script');
+				tag.setAttribute('type', 'text/javascript');
+				tag.appendChild(document.createTextNode(this.model.env.settings.customJs));
+				if (document.head) document.head.appendChild(tag);
+			}
+		}
 		async createCommandUI() {
 			this.model.ui.base = document.querySelector(this.model.env.commandSelector || '#pa-buttons');
 			if (!this.model.ui.base) return;
 			await PrintAppClient.loadTag(`https://editor.print.app/js/petite-vue.js`);
+
+			if (this.model?.env?.settings?.moveButtonsBefore) {
+				const base = document.querySelector(this.model.env.settings.moveButtonsBefore);
+				if (base) base.parentNode.insertBefore(this.model.ui.base, base);
+			}
 	
 			// Using Petite-Vue's syntax for data binding
 			this.model.ui.base.innerHTML = `
@@ -418,6 +439,7 @@
 						this.closeApp();
 						this.setCommandPref();
 						this.updatePreviews();
+						this.handleCartBtn();
 					break;
 					case 'app:closed':
 						this.model.state.closed = true;
@@ -458,6 +480,8 @@
 			const element = document.querySelector(data.selector);
 			if (!element) return;
 
+			this.model.state._pauseDispatch = true;
+
 			switch (element.tagName) {
 				case 'SELECT':
 					element.selectedIndex = data.selectedIndex;
@@ -466,6 +490,8 @@
 					element.value = data.value;
 				break;
 			}
+			element.dispatchEvent(new window.Event('change'));
+			setTimeout(() => this.model.state._pauseDispatch = false, 100);
 		}
 
 		hookElement(data) {
@@ -499,10 +525,12 @@
 
 			// then add the event listener...
 			element.addEventListener('change', e => {
+				if (this.model.state._pauseDispatch) return;
+
 				this.sendMsg(data.callbackEvent, {
 					selector: data.selector,
 					...elementValues(e.target),
-					event: 'change'
+					event: 'change',
 				})
 			})
 		}

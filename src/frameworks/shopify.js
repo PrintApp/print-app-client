@@ -47,10 +47,10 @@ if (typeof this.PrintAppShopify === "undefined") {
             window.pprintset = true;
 
             const paData = await PrintAppShopify.comm(`${PrintAppShopify.ENDPOINTS.apiBase}check-product`, { storeId: this.model.storeId, productId: this.model.productId, cart: 'sp' });
-            if (!paData || !paData.designs || !paData.designs.length) {
+            
+            if (!paData?.designs?.length && !paData?.artwork) {
                 let sec = document.getElementById('pa-buttons');
-                sec && sec.remove();
-                return;
+                return sec?.remove?.();
             }
             this.model.designData = paData;
             this.mountClient();
@@ -80,6 +80,8 @@ if (typeof this.PrintAppShopify === "undefined") {
                 domainKey: `dom_sp_${this.model.storeId}`,
                 storeId: this.model.storeId,
                 designList: this.model.designData?.designs,
+                artwork: this.model.designData?.artwork,
+                settings: this.model.designData?.settings,
                 projectId: currentValue.projectId,
                 mode: currentValue.projectId ? 'edit-project' : 'new-project',
                 commandSelector: '#pa-buttons',
