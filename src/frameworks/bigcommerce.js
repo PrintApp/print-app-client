@@ -86,9 +86,13 @@ class PrintAppBigCommerce {
             if (element.parentNode?.style) element.parentNode.style.display = 'none';
         }
 
+        let langCode = document.lastChild.getAttribute('lang') || 'en';
+        let metaLangTag = document.querySelector('[name="language-code"]');
+        if (metaLangTag) langCode = metaLangTag.getAttribute('content') || langCode;
+
 
         this.model.instance = new PrintAppClient({
-            langCode: document.lastChild.getAttribute('lang') || 'en',
+            langCode,
             product: {
 				id: this.model.productId,
 				name: document.title.split('-')[0],

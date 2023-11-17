@@ -67,9 +67,13 @@ if (typeof this.PrintAppShopify === "undefined") {
             let store = PrintAppShopify.getStorage(PrintAppShopify.STORAGEKEY);
             let currentValue = store[this.model.productId] || {};
             if (!document.getElementById('_printapp')) this.model.cartForm.insertAdjacentHTML('afterbegin', `<input id="_printapp" name="properties[_printapp]" type="hidden" value="${currentValue.projectId || ''}">`);
+
+            let langCode = document.lastChild.getAttribute('lang') || 'en';
+            let metaLangTag = document.querySelector('[name="language-code"]');
+            if (metaLangTag) langCode = metaLangTag.getAttribute('content') || langCode;
             
             this.model.instance = new PrintAppClient({
-                langCode: document.lastChild.getAttribute('lang') || 'en',
+                langCode,
                 product: {
                     id: this.model.productId,
                     name: window.__st.pageurl.split('/').pop().split('-').join(' '),
