@@ -216,7 +216,7 @@
 				return;
 			}
 
-			if (this.model?.env?.artwork?.id?.length) {
+			if (this.model?.env?.artworkId?.length) {
 				this.ui.buttons.showUpload = true;
 				if (!this.model.env?.designList?.length)
 					return this.ui.buttons.showCustomize = false;
