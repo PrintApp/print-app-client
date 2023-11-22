@@ -7,8 +7,8 @@ if (typeof this.PrintAppShopify === "undefined") {
         static STORAGEKEY = 'print-app-sp';
         static PROJECTSKEY = 'print-app-sp-projects';
         static ENDPOINTS = {
-            apiBase: 'https://api.print.app/carts/',
-            baseCdn: 'https://editor.print.app/'
+            baseCdn: 'https://editor.print.app/',
+            runCdn: 'https://run.print.app/',
         };
 
         static SELECTORS = {
@@ -30,6 +30,10 @@ if (typeof this.PrintAppShopify === "undefined") {
             if (this.model.accountPage) return this.doClientAccount();
             if (this.model.cartPage) return await this.setCartImages();
 
+            this.model.langCode = document.querySelector('html').getAttribute('lang') || 'en';
+            let metaLangTag = document.querySelector('[name="language-code"]');
+            if (metaLangTag) this.model.langCode = metaLangTag.getAttribute('content') || this.model.langCode;
+
             if (this.model.productPage) {
                 await this.getUser();
                 window.addEventListener('DOMContentLoaded', this.check);
@@ -38,16 +42,18 @@ if (typeof this.PrintAppShopify === "undefined") {
         }
 
         async check() {
-            if (window.pprintset) return;
+            if (window.printappset) return;
 
-            this.model.cartForm = PrintAppShopify.queryPrioritySelector(PrintAppShopify.SELECTORS.cartForm);
+            this.model.cartForm = window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm);
             if (!this.model.cartForm) return;
 
-            this.model.cartForm.insertAdjacentHTML('afterbegin', `<div id="pa-buttons"><img src="${PrintAppShopify.ENDPOINTS.baseCdn}assets/images/loader.svg"style="width:2rem"></div>`);
-            window.pprintset = true;
+            this.model.cartForm.insertAdjacentHTML('afterbegin', `<div id="pa-buttons"><img src="${window.PrintAppShopify.ENDPOINTS.baseCdn}assets/images/loader.svg"style="width:2rem"></div>`);
+            window.printappset = true;
 
-            const paData = await PrintAppShopify.comm(`${PrintAppShopify.ENDPOINTS.apiBase}check-product`, { storeId: this.model.storeId, productId: this.model.productId, cart: 'sp' });
-            
+            const paData = await fetch(`${window.PrintAppShopify.ENDPOINTS.runCdn}dom_sp_${this.model.storeId}/${this.model.productId}/sp?lang=${this.model.langCode}`)
+                                .then(d => d.json())
+                                .catch(console.log);
+
             if (!paData?.designs?.length && !paData?.artwork) {
                 let sec = document.getElementById('pa-buttons');
                 return sec?.remove?.();
@@ -57,23 +63,21 @@ if (typeof this.PrintAppShopify === "undefined") {
         }
 
         async mountClient() {
-            await PrintAppShopify.loadTag(`${PrintAppShopify.ENDPOINTS.baseCdn}js/client.js`);
+            await window.PrintAppShopify.loadTag(`${window.PrintAppShopify.ENDPOINTS.baseCdn}js/client.js`);
 
             if (this.model.clientMounted || typeof PrintAppClient !== 'function') return;
 
             let titleTag = document.querySelector('[property="og:title"]');
             if (titleTag) this.model.title = titleTag.getAttribute('content');
             
-            let store = PrintAppShopify.getStorage(PrintAppShopify.STORAGEKEY);
+            let store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
             let currentValue = store[this.model.productId] || {};
             if (!document.getElementById('_printapp')) this.model.cartForm.insertAdjacentHTML('afterbegin', `<input id="_printapp" name="properties[_printapp]" type="hidden" value="${currentValue.projectId || ''}">`);
 
-            let langCode = document.lastChild.getAttribute('lang') || 'en';
-            let metaLangTag = document.querySelector('[name="language-code"]');
-            if (metaLangTag) langCode = metaLangTag.getAttribute('content') || langCode;
+            
             
             this.model.instance = new PrintAppClient({
-                langCode,
+                langCode: this.model.langCode,
                 product: {
                     id: this.model.productId,
                     name: window.__st.pageurl.split('/').pop().split('-').join(' '),
@@ -89,7 +93,7 @@ if (typeof this.PrintAppShopify === "undefined") {
                 projectId: currentValue.projectId,
                 mode: currentValue.projectId ? 'edit-project' : 'new-project',
                 commandSelector: '#pa-buttons',
-                previewsSelector: PrintAppShopify.SELECTORS.previews,
+                previewsSelector: window.PrintAppShopify.SELECTORS.previews,
             });
             
             this.model.clientMounted = true;
@@ -99,23 +103,23 @@ if (typeof this.PrintAppShopify === "undefined") {
 
         clearProject(value) {
             const { projectId } = value;
-            let store = PrintAppShopify.getStorage(PrintAppShopify.STORAGEKEY),
-                projects = PrintAppShopify.getStorage(PrintAppShopify.PROJECTSKEY),
+            let store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY),
+                projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY),
                 element = this.getElement();
 
             if (element) element.value = '';
             delete store[this.model.productId];
             delete projects[projectId];
 
-            window.localStorage.setItem(PrintAppShopify.STORAGEKEY, JSON.stringify(store));
-            window.localStorage.setItem(PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
+            window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
+            window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
             window.location.reload();
         }
         projectSaved(value) {
             const { data } = value;
             
-            let store = PrintAppShopify.getStorage(PrintAppShopify.STORAGEKEY),
-                projects = PrintAppShopify.getStorage(PrintAppShopify.PROJECTSKEY),
+            let store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY),
+                projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY),
                 element = this.getElement();
                 
             if (data.clear) {
@@ -127,8 +131,8 @@ if (typeof this.PrintAppShopify === "undefined") {
                 store[this.model.productId] = data;
                 projects[data.projectId] = data;
             }
-            window.localStorage.setItem(PrintAppShopify.STORAGEKEY, JSON.stringify(store));
-            window.localStorage.setItem(PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
+            window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
+            window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
             if (data.clear) window.location.reload();
         }
 
@@ -140,37 +144,36 @@ if (typeof this.PrintAppShopify === "undefined") {
         }
         static getStorage(key) {
             let r = window.localStorage.getItem(key);
-            if (typeof r === 'string') return PrintAppShopify.parse(r);
+            if (typeof r === 'string') return window.PrintAppShopify.parse(r);
             return r || {};
         }
 
         async setCartImages() {
-            const data = await PrintAppShopify.comm(`/cart.js`, null, 'GET').catch(console.log);
-            if (!data || !data.items) return;
+            const data = await fetch('/cart.js')
+                        .then(d => d.json()).catch(console.log);
+            if (!data?.items) return;
 
-            if (data.items) {
-                var value, string,
-                    elements = document.querySelectorAll('[data-cart-line], .cart-item, .cart__item'),
-                    imageSelector = '.line-item__image-wrapper > .aspect-ratio, .cart-line-image,.product_image,.cart_image,.product-image,.cpro_item_inner,.cart__image,.cart-image,.cart-item .image,.cart-item__image-container,.cart_page_image,.tt-cart__product_image,.CartItem__ImageWrapper,div.description.cf > a,.product-img, .cart-item-wrapper>.cart-item-block-left .cart-item-image img, .order-summary__body>tr>td>.line-item>.line-item__media-wrapper, .image-wrap>image-element>.image-element',
-                    images = document.querySelectorAll(imageSelector);
-                const projects = PrintAppShopify.getStorage(PrintAppShopify.PROJECTSKEY);
-                
-                data.items.forEach((item, index) => {
-                    if (item?.properties?.['_printapp']) {
-                        value = projects[item.properties['_printapp']];
-                        console.log('value', value);
-                        string = `<div><img src="${value.previews[0].url}" width="94" style="margin: 5px; opacity: 1"><br/></div>`;
-                        let img = images[index];
-                        if (img) {
-                            if (img.tagName === 'IMG') {
-                                img.parentNode.innerHTML = string;
-                            } else {
-                                img.innerHTML = string;
-                            }
+            var value, string,
+                elements = document.querySelectorAll('[data-cart-line], .cart-item, .cart__item'),
+                imageSelector = '.line-item__image-wrapper > .aspect-ratio, .cart-line-image,.product_image,.cart_image,.product-image,.cpro_item_inner,.cart__image,.cart-image,.cart-item .image,.cart-item__image-container,.cart_page_image,.tt-cart__product_image,.CartItem__ImageWrapper,div.description.cf > a,.product-img, .cart-item-wrapper>.cart-item-block-left .cart-item-image img, .order-summary__body>tr>td>.line-item>.line-item__media-wrapper, .image-wrap>image-element>.image-element',
+                images = document.querySelectorAll(imageSelector);
+            const projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
+            
+            data.items.forEach((item, index) => {
+                if (item?.properties?.['_printapp']) {
+                    value = projects[item.properties['_printapp']];
+                    
+                    string = `<div><img src="${value.previews[0].url}" width="94" style="margin: 5px; opacity: 1"><br/></div>`;
+                    let img = images[index];
+                    if (img) {
+                        if (img.tagName === 'IMG') {
+                            img.parentNode.innerHTML = string;
+                        } else {
+                            img.innerHTML = string;
                         }
                     }
-                });
-            }
+                }
+            });
         }
 
         static async loadTag(url) {
@@ -202,39 +205,7 @@ if (typeof this.PrintAppShopify === "undefined") {
                 return JSON.parse(string);
             } catch (e) { console.error(e) }
         }
-        static async comm (url, data, method = 'POST', asRaw) {
-            let cType, formData;
-                
-            if (data && method === 'GET') {
-                formData = [];
-                for (let _key in data) {
-                    if (typeof data[_key] !== 'undefined' && data[_key] !== null) formData.push(encodeURIComponent(_key) + '=' + encodeURIComponent(data[_key]));
-                }
-                formData = formData.join('&').replace(/%20/g, '+');
-            }
-            if (method === 'POST' || method === 'PUT') {
-                cType = 'application/x-www-form-urlencoded';
-                if (data) formData = JSON.stringify(data);
-            } else if (method === 'GET') {
-                cType = 'text/plain';
-                if (formData) url += `?${formData}`;
-                formData = undefined;
-            }
-            
-            const   headers = new window.Headers();
-            headers.append('Content-Type', cType);
-            
-            let response = await window.fetch(url, {
-                            method: method,
-                            headers: headers,
-                            body: formData
-                        }).then(d => {
-                            if (asRaw) return d.text();
-                            if (d) return d.json();
-                            return new Error('Communication error');
-                        });
-            if (!(response instanceof Error)) return response;
-        }
+        
 
         static queryPrioritySelector(selectors) {
 
@@ -256,7 +227,6 @@ if (typeof this.PrintAppShopify === "undefined") {
             productPage: window.location.pathname.includes('/products'),
             cartPage: window.location.pathname.includes('/cart'),
             accountPage: window.location.pathname.includes('/account'),
-            langCode: document.querySelector('html').getAttribute('lang') || 'en',
             hostname: window.location.hostname,
             storeId: window.Shopify.shop,
             productId: window.__st.rid,

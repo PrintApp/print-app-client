@@ -31,6 +31,7 @@
 			langCode: 'en',
 			designs: new Map(),
 			projects: new Map(),
+			isMobile: window.innerWidth < 1024,
 		};
 
 		constructor(params) {
@@ -57,29 +58,72 @@
 		}
 		async createUi() {
 			this.fire('ui:create');
-			this.addStyling();
+			this.loadStyling();
 					
 			this.model.ui.frame = this.makeFrame();
-			this.model.ui.dummyDiv = document.createElement('div');
+			this.handleDisplayMode();
 			this.createCommandUI();
 			this.model.ui.cartButton = document.querySelector(this.SELECTORS.cartButton);
 			this.model.act.uiCreated = true;
 			this.runCustomScripts();
 			this.fire('ui:created');
-			window.addEventListener('resize', () => this.adjustFramePos())
+			// window.addEventListener('resize', () => this.adjustFramePos())
 		}
 		makeFrame() {
 			let frame = document.createElement('iframe');
 			frame.src = `${PrintAppClient.ENDPOINTS.cdnBase}index.html`;
 			frame.title = 'Print.App';
-			
-			// TODO: Handle display modes here...
-
-			if (document.body) document.body.appendChild(frame);
-
 			frame.classList.add('printapp-frame');
-			frame.classList.add('printapp-display-modal');
 			return frame;
+		}
+
+		handleDisplayMode() {
+			if (!this.model.env.settings.displayMode) this.model.env.settings.displayMode = 'modal';
+
+			if (this.model.isMobile) {
+				this.model.ui.frame.classList.add('printapp-display-mini');
+				this.model.ui.frame.classList.add('printapp-app-is-mobile');
+				this.model.ui.frame.classList.remove('printapp-display-inline');
+				this.model.ui.frame.classList.remove('printapp-display-modal');
+				const base = document.querySelector(this.model.env.commandSelector || '#pa-buttons');
+				this.model.ui.frameParent = base.parentNode;
+				this.model.ui.frameParent?.insertBefore?.(this.model.ui.frame, base);
+				if (this.model.ui.frameParent) return;
+			}
+			
+			switch (this.model.env.settings.displayMode) {
+				case 'mini':
+					this.model.ui.frame.classList.remove('printapp-display-modal');
+					this.model.ui.frame.classList.remove('printapp-display-inline');
+					this.model.ui.frame.classList.add('printapp-display-mini');
+					this.model.ui.frameParent = document.querySelector(this.model.env.settings.miniSelector || this.SELECTORS.mini);
+					if (this.model.ui.frameParent) {
+						this.model.ui.frameParent.innerHTML = '';
+						this.model.ui.frameParent.appendChild(this.model.ui.frame);
+					}
+				break;
+				case 'inline':
+					this.model.ui.frame.classList.remove('printapp-display-modal');
+					this.model.ui.frame.classList.remove('printapp-display-mini');
+					this.model.ui.frame.classList.add('printapp-display-inline');
+					this.model.ui.frameParent = document.querySelector(this.model.env.settings.inlineSelector || '[null]');
+					this.model.ui.frameParent?.insertBefore?.(this.model.ui.frame, this.model.ui.frameParent.firstChild);
+				break;
+				default:
+					document.body.appendChild(this.model.ui.frame);
+					this.model.ui.frame.classList.add('printapp-display-modal');
+					this.model.ui.frame.classList.remove('printapp-display-inline');
+					this.model.ui.frame.classList.remove('printapp-display-mini');
+				break;
+			}
+
+			if (!this.model.ui.frameParent) {
+				this.model.ui.frame.classList.add('printapp-display-modal');
+				this.model.ui.frame.classList.remove('printapp-display-inline');
+				this.model.ui.frame.classList.remove('printapp-display-mini');
+				this.model.ui.displayMode = 'modal';
+			}
+
 		}
 
 		runCustomScripts() {
@@ -157,7 +201,7 @@
 				</div>`
 
 			this.ui = PetiteVue.reactive({
-				lang: {
+				lang: this.model.env.language || {
 					customize: 'Personalise Design',
 					upload_artwork: 'Upload your Artwork',
 					resume: 'Resume Design',
@@ -208,7 +252,7 @@
 		}
 		
 		setCommandPref() {
-			if (this.model.state.shown && ['mini', 'inline'].includes(this.model.ui.displayMode)) {
+			if (this.model.state.shown && ['mini', 'inline'].includes(this.model.env.settings.displayMode)) {
 				this.ui.buttons.showCustomize = false;
 				this.ui.buttons.showUpload = false;
 				this.ui.buttons.editMode = false;
@@ -237,15 +281,7 @@
 				break;
 			}
 		}
-		syncLang(data) {
-			if (!data || typeof data !== 'object') return;
-			this.model.lang = data;
-			if (this?.ui?.lang) {
-				for (const key in this.ui.lang) {
-					if (this.model.lang[key]) this.ui.lang[key] = this.model.lang[key];
-				}
-			}
-		}
+		
 		showApp(event) {
 			this.fire('app:before:show');
 			this.model.act.bodyStyles = {
@@ -256,38 +292,31 @@
 			document.body.style.position = 'relative';
 			this.model.ui.frame.classList.add('printapp-shown');
 
-			switch (this.model.ui.displayMode) {
-				case 'inline':
-					this.model.ui.dummyDiv.style['max-height'] = '700px';
-					this.model.ui.frame.style['max-height'] = '700px';
-				break;
-				case 'mini':
-
-				break;
-				default:
-					document.body.style.overflow = document.documentElement.style.overflow = 'hidden';
-				break;
+			if (!this.model.isMobile) {
+				switch (this.model.env.settings.displayMode) {
+					case 'inline':
+						this.model.ui.frame.style['max-height'] = '700px';
+						this.model.ui.frame.style['margin-bottom'] = '2rem';
+					break;
+					case 'mini':
+						this.model.ui.frameParent.style['min-height'] = '700px';
+					break;
+					default:
+						document.body.style.overflow = document.documentElement.style.overflow = 'hidden';
+					break;
+				}
+			} else {
+				if (this.model.ui.frameParent) this.model.ui.frameParent.style['min-height'] = '100vh';
 			}
 			
 			setTimeout(_ => this.model.ui.frame.style.filter = 'none', 1e3);
 			this.model.state.shown = true;
-			this.adjustFramePos();
 			this.sendMsg('app:show', {
 				artwork: event?.target?.dataset?.cmd === 'artwork',
 			});
 			this.setCommandPref();
 
 			this.fire('app:after:show');
-		}
-
-		adjustFramePos() {
-			if (!this.model.state.shown || !['mini', 'inline'].includes(this.model.ui.displayMode)) return;
-			
-			const coords = PrintAppClient.getRootCoords(this.model.ui.dummyDiv)
-			this.model.ui.frame.style['margin-left'] = `${coords.left}px`
-			this.model.ui.frame.style['margin-top'] = `${coords.top}px`
-			this.model.ui.frame.style.width = `${coords.width}px`
-			this.model.ui.dummyDiv.style['margin-bottom'] = '3rem'
 		}
 
 		handleCartBtn() {
@@ -313,10 +342,11 @@
 				document.body.style.position = this.model.act.bodyStyles.position;
 			}
 			document.documentElement.style.overflow = '';
-			switch (this.model.ui.displayMode) {
+			switch (this.model.env.settings.displayMode) {
+				case 'mini':
 				case 'inline':
 					this.model.ui.frame.style['max-height'] = '0';
-					this.model.ui.dummyDiv.style['max-height'] = '0';
+					this.model.ui.frame.style['margin-bottom'] = '0';
 				break;
 				default:
 				
@@ -365,48 +395,9 @@
 			if (this.model.env.autoShow) this.showApp();
 		}
 
-		handleDisplayMode() {
-
-			switch (this.model.ui.displayMode) {
-				case 'inline':
-					this.model.ui.frame.classList.remove('printapp-display-modal');
-					this.model.ui.frame.classList.remove('printapp-display-mini');
-					this.model.ui.frame.classList.add('printapp-display-inline');
-					this.model.ui.dummyDiv.classList.add('printapp-display-inline-div');
-					this.model.ui.frameParent = document.querySelector(this.model.settings.inlineSelector || '[null]');
-				break;
-				case 'mini':
-					this.model.ui.frame.classList.remove('printapp-display-modal');
-					this.model.ui.frame.classList.remove('printapp-display-inline');
-					this.model.ui.frame.classList.add('printapp-display-mini');
-					this.model.ui.dummyDiv.classList.add('printapp-display-mini-div');
-					this.model.ui.frameParent = document.querySelector(this.model.settings.miniSelector || this.SELECTORS.mini);
-					if (this.model.ui.frameParent)
-						this.model.ui.frameParent.innerHTML = '';
-				break;
-				default:
-					this.model.ui.frame.classList.add('printapp-display-modal');
-					this.model.ui.frame.classList.remove('printapp-display-inline');
-					this.model.ui.frame.classList.remove('printapp-display-mini');
-				break;
-			}
-
-			if (this.model.ui.frameParent) {
-				if (this.model.ui.frameParent)
-					this.model.ui.frameParent.insertBefore(this.model.ui.dummyDiv, this.model.ui.frameParent.firstChild);
-			} else {
-				this.model.ui.frame.classList.add('printapp-display-modal');
-				this.model.ui.frame.classList.remove('printapp-display-inline');
-				this.model.ui.frame.classList.remove('printapp-display-mini');
-				this.model.ui.displayMode = 'modal';
-			}
-
-		}
 		validationComplete() {
 			this.handleCartBtn()
-			this.model.ui.displayMode = this.model.settings.displayMode || 'modal';
-			this.handleDisplayMode();
-			if (this.model.ui.displayMode === 'mini') this.showApp();
+			if (this.model.env.settings.displayMode === 'mini') this.showApp();
 		}
 
 		sendMsg(event, data, handle) {
@@ -464,9 +455,6 @@
 					break;
 					case 'element:update':
 						this.updateElement(message.data)
-					break;
-					case 'lang:set':
-						this.syncLang(message.data)
 					break;
 					default:
 						this.fire(message.event, message.data);
@@ -672,181 +660,15 @@
 		static scrollTo(e, t, s) {
 			if (s <= 0) return;
 			let i = (t - e.scrollTop) / s * 10;
-			setTimeout(()=>{
+			setTimeout(() => {
 				e.scrollTop = e.scrollTop + i,
 				e.scrollTop !== t && this.scrollTo(e, t, s - 10)
 			}, 10)
 		}
-		addStyling() {
-			const styling = `
-				.printapp-frame{ overflow: hidden; border: none; z-index: -10; position: fixed; pointer-events: none; transform: scale(0); filter: brightness(0.6); transition: transform .3s ease-out .2s, filter .3s ease-out .4s; }
-				.printapp-frame.printapp-shown{ display: block; z-index: 999999999; pointer-events: auto; transform: scale(1); filter: brightness(0.6); }
-				.printapp-commands { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
-				.printapp-commands>*{ max-width: 35rem; margin-left: 0; }
-
-				.printapp-frame.printapp-shown.printapp-display-modal { left:0; top: 0; right:0; bottom: 0; width: 100vw; height: 100vh; }
-				.printapp-display-inline {
-					width: 100%;
-					height: 700px;
-					top: 0;
-					left: 0;
-					max-height: 0;
-					position: absolute;
-					transition: max-height 0.6s cubic-bezier(.05,.59,.14,1);
-					border-bottom: 1px solid #64748b4d;
-				}
-				.printapp-display-inline-div {
-					width: 100%;
-					height: 700px;
-					max-height: 0;
-					display: block;
-					transition: max-height 0.6s cubic-bezier(.05,.59,.14,1);
-				}
-				.printapp-display-mini {
-					width: 100%;
-					height: 700px;
-					top: 0;
-					left: 0;
-					position: absolute;
-				}
-				.printapp-display-mini-div {
-					width: 100%;
-					height: 700px;
-					display: block;
-					transition: max-height 0.6s cubic-bezier(.05,.59,.14,1);
-				}
-				
-				.printapp-previews {
-					width: 100%;
-					height: 100%;
-					overflow: hidden;
-					display: flex;
-					flex-direction: column;
-					align-items: center;
-				}
-				
-				.printapp-previews > .printapp-previews-main {
-					max-width: 90%;
-					max-height: 70%;
-					white-space: nowrap;
-					margin-bottom: 20px;
-				}
-				
-				.printapp-previews > .printapp-previews-main > img {
-					max-width: 100%;
-					max-height: 100%;
-					display: block;
-				}
-				
-				.printapp-previews > .printapp-previews-thumbnails {
-					display: flex;
-					height: 100px;
-					justify-content: flex-start;
-					align-items: center;
-					overflow-x: auto;
-					overflow-y: hidden;
-					white-space: nowrap;
-				}
-				
-				.printapp-previews > .printapp-previews-thumbnails::-webkit-scrollbar {
-					width: 10px;
-				}
-				
-				.printapp-previews > .printapp-previews-thumbnails::-webkit-scrollbar-thumb {
-					background-color: darkgrey;
-					outline: 1px solid slategrey;
-				}
-				
-				.printapp-previews > .printapp-previews-thumbnails > div {
-					width: 100px;
-					height: 100px;
-					margin: 0 5px;
-					cursor: pointer;
-					display: flex;
-					justify-content: center;
-					align-items: center;
-				}
-				
-				.printapp-previews > .printapp-previews-thumbnails > div > img {
-					max-width: 100%;
-					max-height: 100%;
-				}
-				.printapp-commands-items {
-					display: flex;
-					flex-direction: column;
-					gap: 1rem;
-					padding-bottom: 1rem;
-				}
-				.printapp-commands-items > .printapp-commands-item > div {
-					display: flex;
-					flex-direction: column;
-				}
-				.printapp-commands-items label {
-					font-weight: bold;
-					text-transform: capitalize;
-				}
-				.printapp-commands-items .input {
-					padding: 10px 8px;
-				}
-				.switch-div {
-					flex-direction: row !important;
-					align-items: center;
-					gap: 1rem;
-				}
-				.switch-div > .switch {
-					position: relative;
-					display: inline-block;
-					width: 60px;
-					height: 34px;
-				}
-				.switch-div > .switch input {
-					opacity: 0;
-					width: 0;
-					height: 0;
-				}
-				.switch-div > .switch span {
-					position: absolute;
-					cursor: pointer;
-					top: 0;
-					left: 0;
-					right: 0;
-					bottom: 0;
-					background-color: #ccc;
-					-webkit-transition: .4s;
-					transition: .4s;
-					border-radius: 34px;
-				}
-				.switch-div > .switch > span:before {
-					position: absolute;
-					content: "";
-					height: 26px;
-					width: 26px;
-					left: 4px;
-					bottom: 4px;
-					background-color: white;
-					-webkit-transition: .4s;
-					transition: .4s;
-					border-radius: 34px;
-				}
-				.switch-div > .switch input:checked + .slider {
-					background-color: #2196F3;
-				}
-				
-				.switch-div > .switch input:focus + .slider {
-					box-shadow: 0 0 1px #2196F3;
-				}
-				
-				.switch-div > .switch input:checked + .slider:before {
-					-webkit-transform: translateX(26px);
-					-ms-transform: translateX(26px);
-					transform: translateX(26px);
-				}
-				
-			`;
-
-			const tag = document.createElement('style');
-			tag.setAttribute('type', 'text/css');
-			tag.appendChild(document.createTextNode(styling));
-			if (document.head) document.head.appendChild(tag);
+		loadStyling() {
+			const tag = document.createElement('link');
+			tag.setAttribute('rel', 'stylesheet');
+			tag.href = `${PrintAppClient.ENDPOINTS.cdnBase}css/style.css`;
+			document?.head?.appendChild?.(tag);
 		}
 	}

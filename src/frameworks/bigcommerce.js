@@ -27,6 +27,10 @@ class PrintAppBigCommerce {
 
 		await this.getUser();
         window.addEventListener('DOMContentLoaded', this.check);
+
+        this.model.langCode = document.querySelector('html').getAttribute('lang') || 'en';
+        let metaLangTag = document.querySelector('[name="language-code"]');
+        if (metaLangTag) this.model.langCode = metaLangTag.getAttribute('content') || this.model.langCode;
 	
         const fn = () => setTimeout(() => {
             window.pprintset = false;
@@ -59,11 +63,13 @@ class PrintAppBigCommerce {
             }
         });
 
-        const paData = await PrintAppBigCommerce.comm(`${PrintAppBigCommerce.ENDPOINTS.apiBase}check-product`, { storeId: this.model.storeId, productId, cart: 'bc' });
-        if (!paData || !paData.designs || !paData.designs.length) {
+        const paData = await fetch(`${window.PrintAppShopify.ENDPOINTS.runCdn}dom_bc_${this.model.storeId}/${this.model.productId}/bc?lang=${this.model.langCode}`)
+                                .then(d => d.json())
+                                .catch(console.log);
+
+        if (!paData?.designs?.length && !paData?.artwork) {
             let sec = document.getElementById('pa-buttons');
-            sec && sec.remove();
-            return;
+            return sec?.remove?.();
         }
         this.model.designData = paData;
         this.mountClient();
@@ -86,13 +92,8 @@ class PrintAppBigCommerce {
             if (element.parentNode?.style) element.parentNode.style.display = 'none';
         }
 
-        let langCode = document.lastChild.getAttribute('lang') || 'en';
-        let metaLangTag = document.querySelector('[name="language-code"]');
-        if (metaLangTag) langCode = metaLangTag.getAttribute('content') || langCode;
-
-
         this.model.instance = new PrintAppClient({
-            langCode,
+            langCode: this.model.langCode,
             product: {
 				id: this.model.productId,
 				name: document.title.split('-')[0],
