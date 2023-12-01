@@ -15,7 +15,7 @@
 		handlers = { };
 		
 		model = {
-			ui: { commands: { }},
+			ui: { commands: { } },
 			env: {},
 			state: {
 				shown: false,
@@ -47,27 +47,33 @@
 				this.model.session.previews = params.previews;
 			}
 			this.model.env = {
+				settings: {},
 				isAdmin: false,
 				customValues: {},
 				parentWidth: window.innerWidth,
 				parentHeight: window.innerHeight,
+				mode: 'new-project',
 				...params,
 			};
 			this.model.state.mode = params.mode || 'new-project';
-			this.createUi();
+			if (this.model.env.noInstance) {
+				this.managePage();
+			} else {
+				this.createUi();
+			}
 		}
 		async createUi() {
 			this.fire('ui:create');
 			this.loadStyling();
 					
 			this.model.ui.frame = this.makeFrame();
+			this.setMainDiv();
 			this.handleDisplayMode();
 			this.createCommandUI();
 			this.model.ui.cartButton = document.querySelector(this.SELECTORS.cartButton);
 			this.model.act.uiCreated = true;
 			this.runCustomScripts();
 			this.fire('ui:created');
-			// window.addEventListener('resize', () => this.adjustFramePos())
 		}
 		makeFrame() {
 			let frame = document.createElement('iframe');
@@ -77,17 +83,22 @@
 			return frame;
 		}
 
+		setMainDiv() {
+			this.model.ui.base = document.querySelector(this.model.env.commandSelector || '#pa-buttons');
+		}
+
 		handleDisplayMode() {
 			if (!this.model.env.settings.displayMode) this.model.env.settings.displayMode = 'modal';
 
 			if (this.model.isMobile) {
+				if (!this.model.ui.base) return;
 				this.model.ui.frame.classList.add('printapp-display-mini');
 				this.model.ui.frame.classList.add('printapp-app-is-mobile');
 				this.model.ui.frame.classList.remove('printapp-display-inline');
 				this.model.ui.frame.classList.remove('printapp-display-modal');
-				const base = document.querySelector(this.model.env.commandSelector || '#pa-buttons');
-				this.model.ui.frameParent = base.parentNode;
-				this.model.ui.frameParent?.insertBefore?.(this.model.ui.frame, base);
+
+				this.model.ui.frameParent = this.model.ui.base.parentNode;
+				this.model.ui.frameParent?.insertBefore?.(this.model.ui.frame, this.model.ui.base);
 				if (this.model.ui.frameParent) return;
 			}
 			
@@ -141,7 +152,6 @@
 			}
 		}
 		async createCommandUI() {
-			this.model.ui.base = document.querySelector(this.model.env.commandSelector || '#pa-buttons');
 			if (!this.model.ui.base) return;
 			await PrintAppClient.loadTag(`https://editor.print.app/js/petite-vue.js`);
 
@@ -154,12 +164,12 @@
 			this.model.ui.base.innerHTML = `
 				<div id="print-app-container" class="printapp-commands" v-scope>
 					<div class="printapp-commands-items">
-						<div  v-for="item in items" class="printapp-commands-item">
+						<div v-for="item in items" class="printapp-commands-item">
 							<div v-if="item.type === 'label'" class="label">
 								<label>{{item.title}}</label>
 							</div>
 							<div v-if="['button', 'upload'].includes(item.type)">
-								<button @click.prevent.stop="clickEvt" :data-cmd="item.id" :name="item.id" class="button">{{item.title}}</button>
+								<button @click.prevent.stop="clickEvt" :data-cmd="item.id" :name="item.id" class="button btn btn-primary">{{item.title}}</button>
 							</div>
 							<div v-if="item.type === 'input'">
 								<label>{{item.title}}:</label>
@@ -195,12 +205,12 @@
 							</div>
 						</div>
 					</div>
-					<button v-if="buttons.showCustomize" @click.prevent.stop="showApp" class="button">{{lang[ buttons.editMode ? 'resume' : 'customize' ]}}</button>
-					<button v-if="buttons.showUpload" @click.prevent.stop="showApp" data-cmd="artwork" class="button">{{lang.upload_artwork}}</button>
-					<button v-if="buttons.showClear" @click.prevent.stop="clearDesign" class="button">{{lang.clear}}</button>
+					<button v-if="buttons.showCustomize" @click.prevent.stop="showApp" class="button btn btn-primary">{{lang[ buttons.editMode ? 'resume' : 'customize' ]}}</button>
+					<button v-if="buttons.showUpload" @click.prevent.stop="showApp" data-cmd="artwork" class="button btn btn-primary">{{lang.upload_artwork}}</button>
+					<button v-if="buttons.showClear" @click.prevent.stop="clearDesign" class="button btn btn-primary">{{lang.clear}}</button>
 				</div>`
 
-			this.ui = PetiteVue.reactive({
+			this.model.ui.vue = PetiteVue.reactive({
 				lang: this.model.env.language || {
 					customize: 'Personalise Design',
 					upload_artwork: 'Upload your Artwork',
@@ -221,7 +231,7 @@
 				inputEvt: this.controlInput.bind(this),
 			})
 
-			PetiteVue.createApp(this.ui).mount('#print-app-container')
+			PetiteVue.createApp(this.model.ui.vue).mount('#print-app-container')
 		
 			this.setCommandPref()
 			this.updatePreviews()
@@ -229,55 +239,56 @@
 
 		controlClick(event) {
 			let id = event?.target?.name,
-				item = this.ui.items.find(i => i.id === id);
+				item = this.model.ui.vue.items.find(i => i.id === id);
 
 			this.sendMsg('control:change', { eventType: 'click', data: item });
 		}
 		controlChange(event) {
 			let id = event?.target?.name,
-				item = this.ui.items.find(i => i.id === id);
+				item = this.model.ui.vue.items.find(i => i.id === id);
 
 			this.sendMsg('control:change', { eventType: 'change', data: item });
 		}
 		controlInput(event) {
 			let id = event?.target?.name,
-				item = this.ui.items.find(i => i.id === id);
+				item = this.model.ui.vue.items.find(i => i.id === id);
 
 			this.sendMsg('control:change', { eventType: 'input', data: item })
 		}
 
 		createControl(data) {
 			if (!data?.type) return;
-			this.ui.items.push(data);
+			this.model.ui.vue.items.push(data);
 		}
 		
 		setCommandPref() {
+			if (!this.model.ui.vue) return;
 			if (this.model.state.shown && ['mini', 'inline'].includes(this.model.env.settings.displayMode)) {
-				this.ui.buttons.showCustomize = false;
-				this.ui.buttons.showUpload = false;
-				this.ui.buttons.editMode = false;
-				this.ui.buttons.showClear = this.model.state.mode === 'edit-project'
+				this.model.ui.vue.buttons.showCustomize = false;
+				this.model.ui.vue.buttons.showUpload = false;
+				this.model.ui.vue.buttons.editMode = false;
+				this.model.ui.vue.buttons.showClear = this.model.state.mode === 'edit-project'
 				return;
 			}
 
 			if (this.model?.env?.artworkId?.length) {
-				this.ui.buttons.showUpload = true;
+				this.model.ui.vue.buttons.showUpload = true;
 				if (!this.model.env?.designList?.length)
-					return this.ui.buttons.showCustomize = false;
+					return this.model.ui.vue.buttons.showCustomize = false;
 			} else {
-				this.ui.buttons.showUpload = false;
+				this.model.ui.vue.buttons.showUpload = false;
 			}
 
 			switch (this.model.state.mode) {
 				case 'edit-project':
-					this.ui.buttons.showCustomize = true;
-					this.ui.buttons.editMode = true;
-					this.ui.buttons.showClear = true;
+					this.model.ui.vue.buttons.showCustomize = true;
+					this.model.ui.vue.buttons.editMode = true;
+					this.model.ui.vue.buttons.showClear = true;
 				break;
 				default:
-					this.ui.buttons.showCustomize = true;
-					this.ui.buttons.editMode = false;
-					this.ui.buttons.showClear = false;
+					this.model.ui.vue.buttons.showCustomize = true;
+					this.model.ui.vue.buttons.editMode = false;
+					this.model.ui.vue.buttons.showClear = false;
 				break;
 			}
 		}
@@ -374,7 +385,7 @@
 			if (typeof previews === 'string') previews = PrintAppClient.parse(previews);
 
 			const previewBase = document.querySelector(this.model.env.previewsSelector);
-			if (!previewBase || !previews || !previews.length) return;
+			if (!previewBase || !previews?.length) return;
 
 			previewBase.innerHTML =
 				`<div class="printapp-previews">
@@ -425,6 +436,7 @@
 					break;
 					case 'app:saved':
 						this.model.state.saved = true;
+						if (message.data) message.data.mode = 'edit-project';
 						this.saved(message.data);
 						this.fire(message.event, message.data);
 						this.closeApp();
@@ -577,6 +589,17 @@
 					handlers[i].call(this, event);
 				}
 			}
+		}
+
+		manageCartPage() {
+			switch (this.model.state.client) {
+				case 'ps':
+
+				break;
+			}
+		}
+		managePage() {
+			if (this.model.state.page === 'cart') return this.manageCartPage();
 		}
 
 		static async comm(url, data, method = 'POST', useFormData = false) {

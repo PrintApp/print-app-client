@@ -12,7 +12,7 @@ if (typeof this.PrintAppShopify === "undefined") {
         };
 
         static SELECTORS = {
-            previews: '.product__media-wrapper,.image,#product-photo-container,.product-left-column,.main-image,.product-photo-container,.featured,#image-block,.product-single-photos,.product_slider,#product-image,.photos,.product-single__photos,.image__container',
+            previews: '.product__media-wrapper,.image,#product-photo-container,.product-left-column,.main-image,.product-photo-container,.featured,#image-block,.product-single-photos,.product_slider,#product-image,.photos,.product-single__photos,.image__container,.product-gallery',
             cartForm: '[data-type="add-to-cart-form"],[action="/cart/add"],[action="/cart/add.js"],#add-item-form,#add-to-cart-form,[action$="/cart/add"], #AddToCartForm',
         };
         model = { };
@@ -90,6 +90,7 @@ if (typeof this.PrintAppShopify === "undefined") {
                 designList: this.model.designData?.designs,
                 artwork: this.model.designData?.artwork,
                 settings: this.model.designData?.settings,
+                language: this.model.designData?.language,
                 projectId: currentValue.projectId,
                 mode: currentValue.projectId ? 'edit-project' : 'new-project',
                 commandSelector: '#pa-buttons',
