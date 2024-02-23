@@ -8,9 +8,10 @@
 			frameDomain: 'https://editor.print.app'
 		};
 
-		SELECTORS = {
+		static SELECTORS = {
 			miniSelector: '#main > div.row > div:nth-child(1),.single-product-thumbnail,#content > div > div.col-sm-8 > ul.thumbnails',
-			cartButton: '.single_add_to_cart_button,.kad_add_to_cart,.addtocart,#add-to-cart,.add_to_cart,#add,#AddToCart,#product-add-to-cart,#add_to_cart,#button-cart,#AddToCart-product-template,.product-details-wrapper .add-to-cart,.btn-addtocart,.ProductForm__AddToCart,.add_to_cart_product_page,#addToCart,[name="add"],[data-button-action="add-to-cart"]'
+			cartButton: '.single_add_to_cart_button,.kad_add_to_cart,.addtocart,#add-to-cart,.add_to_cart,#add,#AddToCart,#product-add-to-cart,#add_to_cart,#button-cart,#AddToCart-product-template,.product-details-wrapper .add-to-cart,.btn-addtocart,.ProductForm__AddToCart,.add_to_cart_product_page,#addToCart,[name="add"],[data-button-action="add-to-cart"],[data-action="add-to-cart"]',
+			mini: ''
 		};
 		handlers = { };
 		
@@ -70,7 +71,7 @@
 			this.setMainDiv();
 			this.handleDisplayMode();
 			this.createCommandUI();
-			this.model.ui.cartButton = document.querySelector(this.SELECTORS.cartButton);
+			this.model.ui.cartButton = document.querySelector(PrintAppClient.SELECTORS.cartButton);
 			this.model.act.uiCreated = true;
 			this.runCustomScripts();
 			this.fire('ui:created');
@@ -90,24 +91,23 @@
 		handleDisplayMode() {
 			if (!this.model.env.settings.displayMode) this.model.env.settings.displayMode = 'modal';
 
-			if (this.model.isMobile) {
-				if (!this.model.ui.base) return;
-				this.model.ui.frame.classList.add('printapp-display-mini');
-				this.model.ui.frame.classList.add('printapp-app-is-mobile');
-				this.model.ui.frame.classList.remove('printapp-display-inline');
-				this.model.ui.frame.classList.remove('printapp-display-modal');
+			// if (this.model.isMobile && this.model.ui.base) {
+			// 	this.model.ui.frame.classList.add('printapp-display-mini');
+			// 	this.model.ui.frame.classList.add('printapp-app-is-mobile');
+			// 	this.model.ui.frame.classList.remove('printapp-display-inline');
+			// 	this.model.ui.frame.classList.remove('printapp-display-modal');
 
-				this.model.ui.frameParent = this.model.ui.base.parentNode;
-				this.model.ui.frameParent?.insertBefore?.(this.model.ui.frame, this.model.ui.base);
-				if (this.model.ui.frameParent) return;
-			}
+			// 	this.model.ui.frameParent = this.model.ui.base.parentNode;
+			// 	this.model.ui.frameParent?.insertBefore?.(this.model.ui.frame, this.model.ui.base);
+			// 	if (this.model.ui.frameParent) return;
+			// }
 			
 			switch (this.model.env.settings.displayMode) {
 				case 'mini':
 					this.model.ui.frame.classList.remove('printapp-display-modal');
 					this.model.ui.frame.classList.remove('printapp-display-inline');
 					this.model.ui.frame.classList.add('printapp-display-mini');
-					this.model.ui.frameParent = document.querySelector(this.model.env.settings.miniSelector || this.SELECTORS.mini);
+					this.model.ui.frameParent = document.querySelector(this.model.env.settings.miniSelector || PrintAppClient.SELECTORS.mini);
 					if (this.model.ui.frameParent) {
 						this.model.ui.frameParent.innerHTML = '';
 						this.model.ui.frameParent.appendChild(this.model.ui.frame);
@@ -331,7 +331,7 @@
 		}
 
 		handleCartBtn() {
-			if (this.model?.settings?.forceCustomization && this.model.ui.cartButton) {
+			if (this.model?.env?.settings?.forceCustomization && this.model.ui.cartButton) {
 				if (this.model.state.mode === 'new-project') {
 					if (this.model.ui.cartButton.style.display != 'none') this.model.ui.cartButtonStyle = this.model.ui.cartButton.style.display;
 					this.model.ui.cartButton.style.display = 'none';
@@ -378,13 +378,13 @@
 			this.fire('app:project:reset', { projectId: this.model.session.projectId });
 		}
 		updatePreviews() {
-			if (this.model?.settings?.retainProductImages) return;
-			if (!this.model?.env?.previewsSelector) return;
+			if (this.model?.env?.settings?.retainProductImages) return;
+			if (!this.model?.env?.previewsSelector && !this.model?.env?.settings?.customPreviewSelector) return;
 
 			var previews = (this.model?.session?.previews) || this.model.env.previews;
 			if (typeof previews === 'string') previews = PrintAppClient.parse(previews);
 
-			const previewBase = document.querySelector(this.model.env.previewsSelector);
+			const previewBase = document.querySelector(this.model?.env?.settings?.customPreviewSelector || this.model.env.previewsSelector);
 			if (!previewBase || !previews?.length) return;
 
 			previewBase.innerHTML =
@@ -436,7 +436,10 @@
 					break;
 					case 'app:saved':
 						this.model.state.saved = true;
-						if (message.data) message.data.mode = 'edit-project';
+						
+						if (message.data && message.data.mode && !message.data.mode.includes('artwork'))
+							message.data.mode = 'edit-project';
+
 						this.saved(message.data);
 						this.fire(message.event, message.data);
 						this.closeApp();
@@ -484,13 +487,15 @@
 
 			switch (element.tagName) {
 				case 'SELECT':
-					element.selectedIndex = data.selectedIndex;
+					if (typeof element.selectedIndex !== 'undefined') element.selectedIndex = data.selectedIndex;
+					if (typeof element.value !== 'undefined') element.value = data.value;
+					element.dispatchEvent(new window.Event('change', { bubbles: true }));
 				break;
 				case 'INPUT':
 					element.value = data.value;
+					element.dispatchEvent(new window.Event('input', { bubbles: true }));
 				break;
 			}
-			element.dispatchEvent(new window.Event('change'));
 			setTimeout(() => this.model.state._pauseDispatch = false, 100);
 		}
 

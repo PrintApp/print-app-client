@@ -92,6 +92,7 @@ if (typeof this.PrintAppShopify === "undefined") {
                 settings: this.model.designData?.settings,
                 language: this.model.designData?.language,
                 projectId: currentValue.projectId,
+                previews: currentValue.previews,
                 mode: currentValue.projectId ? 'edit-project' : 'new-project',
                 commandSelector: '#pa-buttons',
                 previewsSelector: window.PrintAppShopify.SELECTORS.previews,
@@ -134,8 +135,24 @@ if (typeof this.PrintAppShopify === "undefined") {
             }
             window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
             window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
-            if (data.clear) window.location.reload();
+            if (data.clear) {
+                window.location.reload();
+            } else {
+                this.setAddToCartAction();
+            }
         }
+
+        setAddToCartAction() {
+			if (!this.model.instance || (this.model.instance?.model?.env?.settings?.displayMode === 'mini')) return;
+			var cartButton = window.PrintAppShopify.queryPrioritySelector(PrintAppClient.SELECTORS.cartButton);
+			if (!cartButton) return;
+
+			const clearFnc = () => {
+				setTimeout(() => this.projectSaved({ data: { clear: true }}), 2000)
+			};
+			cartButton.removeEventListener('click', clearFnc);
+			cartButton.addEventListener('click', clearFnc);
+	    }
 
         doClientAccount() {
 
@@ -212,8 +229,10 @@ if (typeof this.PrintAppShopify === "undefined") {
 
             const list = (typeof selectors === 'string') ? selectors.split(',') : selectors;
             for (let selector of list) {
-                const element = document.querySelector(selector);
-                if (element) return element;
+                const elements = document.querySelectorAll(selector);
+                for (let element of elements) {
+                    if (element?.offsetParent) return element;
+                }
             }
             return null;
         }
