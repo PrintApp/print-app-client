@@ -517,8 +517,9 @@
 						return {
 							value: target.value,
 							checked: target.checked,
-						}
+						};
 				}
+				return {};
 			};
 
 			// send the initial value...
