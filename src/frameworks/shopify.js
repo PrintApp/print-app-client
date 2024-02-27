@@ -9,6 +9,7 @@ if (typeof this.PrintAppShopify === "undefined") {
         static ENDPOINTS = {
             baseCdn: 'https://editor.print.app/',
             runCdn: 'https://run.print.app/',
+            pdf: 'https://pdf.print.app/',
         };
 
         static SELECTORS = {
@@ -72,7 +73,13 @@ if (typeof this.PrintAppShopify === "undefined") {
             
             let store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
             let currentValue = store[this.model.productId] || {};
-            if (!document.getElementById('_printapp')) this.model.cartForm.insertAdjacentHTML('afterbegin', `<input id="_printapp" name="properties[_printapp]" type="hidden" value="${currentValue.projectId || ''}">`);
+            if (!document.getElementById('_printapp')) {
+                this.model.cartForm.insertAdjacentHTML('afterbegin', `
+                    <input id="_printapp" name="properties[_printapp]" type="hidden" value="">
+                    <input id="_printapp-pdf-download" name="properties[_printapp-pdf-download]" type="hidden" value="">
+                `);
+                this.setElementValue(currentValue.projectId || '');
+            }
 
             
             
@@ -106,10 +113,9 @@ if (typeof this.PrintAppShopify === "undefined") {
         clearProject(value) {
             const { projectId } = value;
             let store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY),
-                projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY),
-                element = this.getElement();
+                projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
 
-            if (element) element.value = '';
+            this.setElementValue('');
             delete store[this.model.productId];
             delete projects[projectId];
 
@@ -121,15 +127,14 @@ if (typeof this.PrintAppShopify === "undefined") {
             const { data } = value;
             
             let store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY),
-                projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY),
-                element = this.getElement();
+                projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
                 
             if (data.clear) {
-                if (element) element.value = '';
+                this.setElementValue('');
                 delete store[this.model.productId];
                 delete projects[data.projectId];
             } else {
-                if (element) element.value = data.projectId;
+                this.setElementValue(data.projectId);
                 store[this.model.productId] = data;
                 projects[data.projectId] = data;
             }
@@ -141,7 +146,19 @@ if (typeof this.PrintAppShopify === "undefined") {
                 this.setAddToCartAction();
             }
         }
+        setElementValue(value) {
+            let element = document.getElementById(`_printapp`),
+                pdfElement = document.getElementById(`_printapp-pdf-download`);
 
+            if (element) element.value = value;
+            if (pdfElement) {
+                if (value) {
+                    pdfElement.value = `${window.PrintAppShopify.ENDPOINTS.pdf}${value}`;
+                } else {
+                    pdfElement.value = '';
+                }
+            }
+        }
         setAddToCartAction() {
 			if (!this.model.instance || (this.model.instance?.model?.env?.settings?.displayMode === 'mini')) return;
 			var cartButton = window.PrintAppShopify.queryPrioritySelector(PrintAppClient.SELECTORS.cartButton);
@@ -157,9 +174,7 @@ if (typeof this.PrintAppShopify === "undefined") {
         doClientAccount() {
 
         }
-        getElement() {
-            return document.getElementById(`_printapp`);
-        }
+        
         static getStorage(key) {
             let r = window.localStorage.getItem(key);
             if (typeof r === 'string') return window.PrintAppShopify.parse(r);
