@@ -57,15 +57,15 @@ class PrintAppBigCommerce {
         // modifierId
         let nodes = document.querySelectorAll('[name^="attribute["]');
         if (nodes) nodes.forEach(node => {
-            if (node.parentNode?.textContent && node.parentNode.textContent.includes('print-app')) {
+            if (node.parentNode?.textContent?.includes('print-app')) {
                 this.model.modifierId = node.name.split('[')[1].split(']')[0];
                 node.parentNode.style.display = 'none';
             }
         });
 
-        const paData = await fetch(`${window.PrintAppShopify.ENDPOINTS.runCdn}dom_bc_${this.model.storeId}/${this.model.productId}/bc?lang=${this.model.langCode}`)
-                                .then(d => d.json())
-                                .catch(console.log);
+        const paData = await fetch(`${PrintAppBigCommerce.ENDPOINTS.runCdn}dom_bc_${this.model.storeId}/${this.model.productId}/bc?lang=${this.model.langCode}`)
+                        .then(d => d.json())
+                        .catch(console.log);
 
         if (!paData?.designs?.length && !paData?.artwork) {
             let sec = document.getElementById('pa-buttons');
