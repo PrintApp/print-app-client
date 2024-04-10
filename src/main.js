@@ -161,6 +161,7 @@
 			}
 	
 			// Using Petite-Vue's syntax for data binding
+			const buttonClasses = this.model.env.settings.buttonsClass || 'button';
 			this.model.ui.base.innerHTML = `
 				<div id="print-app-container" class="printapp-commands" v-scope>
 					<div class="printapp-commands-items">
@@ -205,9 +206,9 @@
 							</div>
 						</div>
 					</div>
-					<button v-if="buttons.showCustomize" @click.prevent.stop="showApp" class="button btn btn-primary">{{lang[ buttons.editMode ? 'resume' : 'customize' ]}}</button>
-					<button v-if="buttons.showUpload" @click.prevent.stop="showApp" data-cmd="artwork" class="button btn btn-primary">{{lang.upload_artwork}}</button>
-					<button v-if="buttons.showClear" @click.prevent.stop="clearDesign" class="button btn btn-primary">{{lang.clear}}</button>
+					<button v-if="buttons.showCustomize" @click.prevent.stop="showApp" class="${buttonClasses} btn btn-primary">{{lang[ buttons.editMode ? 'resume' : 'customize' ]}}</button>
+					<button v-if="buttons.showUpload" @click.prevent.stop="showApp" data-cmd="artwork" class="${buttonClasses} btn btn-primary">{{lang.upload_artwork}}</button>
+					<button v-if="buttons.showClear" @click.prevent.stop="clearDesign" class="${buttonClasses} btn btn-primary">{{lang.clear}}</button>
 				</div>`
 
 			this.model.ui.vue = PetiteVue.reactive({

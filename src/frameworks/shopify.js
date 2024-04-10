@@ -83,7 +83,7 @@ if (typeof this.PrintAppShopify === "undefined") {
 
             
             
-            this.model.instance = new PrintAppClient({
+            this.model.instance = window.printAppInstance = new PrintAppClient({
                 langCode: this.model.langCode,
                 product: {
                     id: this.model.productId,

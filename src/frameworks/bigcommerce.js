@@ -92,7 +92,7 @@ class PrintAppBigCommerce {
             if (element.parentNode?.style) element.parentNode.style.display = 'none';
         }
 
-        this.model.instance = new PrintAppClient({
+        this.model.instance = window.printAppInstance = new PrintAppClient({
             langCode: this.model.langCode,
             product: {
 				id: this.model.productId,
