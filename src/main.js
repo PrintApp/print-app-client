@@ -382,11 +382,14 @@
 			if (this.model?.env?.settings?.retainProductImages) return;
 			if (!this.model?.env?.previewsSelector && !this.model?.env?.settings?.customPreviewSelector) return;
 
-			var previews = (this.model?.session?.previews) || this.model.env.previews;
+			var previews = this.model?.session?.previews || this.model.env.previews;
 			if (typeof previews === 'string') previews = PrintAppClient.parse(previews);
 
 			const previewBase = document.querySelector(this.model?.env?.settings?.customPreviewSelector || this.model.env.previewsSelector);
 			if (!previewBase || !previews?.length) return;
+
+			if (this.model?.state?.mode === 'edit-project')
+				previews = previews.map(p => ({ ...p, url: `${p.url}&r=${Math.random()}` }));
 
 			previewBase.innerHTML =
 				`<div class="printapp-previews">
