@@ -81,8 +81,6 @@ if (typeof this.PrintAppShopify === "undefined") {
                 this.setElementValue(currentValue.projectId || '');
             }
 
-            
-            
             this.model.instance = window.printAppInstance = new PrintAppClient({
                 langCode: this.model.langCode,
                 product: {
@@ -161,19 +159,18 @@ if (typeof this.PrintAppShopify === "undefined") {
         }
         setAddToCartAction() {
 			if (!this.model.instance || (this.model.instance?.model?.env?.settings?.displayMode === 'mini')) return;
-			var cartButton = window.PrintAppShopify.queryPrioritySelector(PrintAppClient.SELECTORS.cartButton);
+            const   paInstance = this.model.instance,
+                    cartButton = paInstance?.model?.ui?.cartButton;
 			if (!cartButton) return;
 
-			const clearFnc = () => {
-				setTimeout(() => this.projectSaved({ data: { clear: true }}), 2000)
-			};
+			const clearFnc = () =>
+				setTimeout(() => this.projectSaved({ data: { clear: true }}), 1000);
+
 			cartButton.removeEventListener('click', clearFnc);
 			cartButton.addEventListener('click', clearFnc);
 	    }
 
-        doClientAccount() {
-
-        }
+        doClientAccount() { }
         
         static getStorage(key) {
             let r = window.localStorage.getItem(key);
@@ -187,7 +184,6 @@ if (typeof this.PrintAppShopify === "undefined") {
             if (!data?.items) return;
 
             var value, string,
-                elements = document.querySelectorAll('[data-cart-line], .cart-item, .cart__item'),
                 imageSelector = '.line-item__image-wrapper > .aspect-ratio, .cart-line-image,.product_image,.cart_image,.product-image,.cpro_item_inner,.cart__image,.cart-image,.cart-item .image,.cart-item__image-container,.cart_page_image,.tt-cart__product_image,.CartItem__ImageWrapper,div.description.cf > a,.product-img, .cart-item-wrapper>.cart-item-block-left .cart-item-image img, .order-summary__body>tr>td>.line-item>.line-item__media-wrapper, .image-wrap>image-element>.image-element',
                 images = document.querySelectorAll(imageSelector);
             const projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
@@ -226,7 +222,7 @@ if (typeof this.PrintAppShopify === "undefined") {
             });
         }
         async getUser() {
-            // TODO.. get user data
+            // TODO.. get user data details
             this.model.userData = {
                 id: window.__st.cid,
             };
@@ -239,9 +235,7 @@ if (typeof this.PrintAppShopify === "undefined") {
             } catch (e) { console.error(e) }
         }
         
-
         static queryPrioritySelector(selectors) {
-
             const list = (typeof selectors === 'string') ? selectors.split(',') : selectors;
             for (let selector of list) {
                 const elements = document.querySelectorAll(selector);
@@ -251,9 +245,7 @@ if (typeof this.PrintAppShopify === "undefined") {
             }
             return null;
         }
-        
     }
-
 }
 
 (function(global) {

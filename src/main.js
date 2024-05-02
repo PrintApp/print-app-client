@@ -71,7 +71,7 @@
 			this.setMainDiv();
 			this.handleDisplayMode();
 			this.createCommandUI();
-			this.model.ui.cartButton = document.querySelector(PrintAppClient.SELECTORS.cartButton);
+			this.model.ui.cartButton = document.querySelector(this.model.env.settings?.cartButtonSelector || PrintAppClient.SELECTORS.cartButton);
 			this.model.act.uiCreated = true;
 			this.runCustomScripts();
 			this.fire('ui:created');
