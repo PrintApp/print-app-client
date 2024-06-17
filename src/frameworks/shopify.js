@@ -19,7 +19,7 @@ if (typeof this.PrintAppShopify === "undefined") {
         model = { };
 
         constructor(params) {
-            if (!params) return console.error('Parameters required but undefined was passed'); 
+            if (!params) return console.error(`Parameters required but "undefined" was passed`); 
             this.init(params);
         }
         
@@ -35,18 +35,19 @@ if (typeof this.PrintAppShopify === "undefined") {
             let metaLangTag = document.querySelector('[name="language-code"]');
             if (metaLangTag) this.model.langCode = metaLangTag.getAttribute('content') || this.model.langCode;
 
-            if (this.model.productPage) {
-                await this.getUser();
-                window.addEventListener('DOMContentLoaded', this.check);
-                this.check();
-            }
+            await this.getUser();
+            window.addEventListener('DOMContentLoaded', this.check);
+            this.check();
         }
 
         async check() {
             if (window.printappset) return;
 
             this.model.cartForm = window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm);
-            if (!this.model.cartForm) return;
+            if (!this.model.productId)
+                this.model.productId = this.model.cartForm?.querySelector('input[name="product-id"]')?.value;
+
+            if (!this.model.cartForm || !this.model.productId) return;
 
             this.model.cartForm.insertAdjacentHTML('afterbegin', `<div id="pa-buttons"><img src="${window.PrintAppShopify.ENDPOINTS.baseCdn}assets/images/loader.svg"style="width:2rem"></div>`);
             window.printappset = true;
@@ -55,7 +56,7 @@ if (typeof this.PrintAppShopify === "undefined") {
                                 .then(d => d.json())
                                 .catch(console.log);
 
-            if (!paData?.designs?.length && !paData?.artwork) {
+            if (!paData?.designs?.length && !paData?.artwork && !Object.keys(paData?.variants || {}).length) {
                 let sec = document.getElementById('pa-buttons');
                 return sec?.remove?.();
             }
@@ -81,18 +82,24 @@ if (typeof this.PrintAppShopify === "undefined") {
                 this.setElementValue(currentValue.projectId || '');
             }
 
+            let designList = this.model.designData?.designs || [];
+            if (Object.keys(this.model.designData?.variants || {}).length) {
+                designList = designList.concat(Object.values(this.model.designData.variants).flat())
+            }
+
             this.model.instance = window.printAppInstance = new PrintAppClient({
                 langCode: this.model.langCode,
                 product: {
                     id: this.model.productId,
-                    name: window.__st.pageurl.split('/').pop().split('-').join(' '),
+                    name: window.__st?.pageurl?.split('/').pop().split('-').join(' '),
                     title: this.model.title,
                     url: window.location.href
                 },
                 framework: 'sp',
                 domainKey: `dom_sp_${this.model.storeId}`,
                 storeId: this.model.storeId,
-                designList: this.model.designData?.designs,
+                designList,
+                variants: this.model.designData?.variants,
                 artwork: this.model.designData?.artwork,
                 settings: this.model.designData?.settings,
                 language: this.model.designData?.language,

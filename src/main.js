@@ -11,7 +11,8 @@
 		static SELECTORS = {
 			miniSelector: '#main > div.row > div:nth-child(1),.single-product-thumbnail,#content > div > div.col-sm-8 > ul.thumbnails',
 			cartButton: '.single_add_to_cart_button,.kad_add_to_cart,.addtocart,#add-to-cart,.add_to_cart,#add,#AddToCart,#product-add-to-cart,#add_to_cart,#button-cart,#AddToCart-product-template,.product-details-wrapper .add-to-cart,.btn-addtocart,.ProductForm__AddToCart,.add_to_cart_product_page,#addToCart,[name="add"],[data-button-action="add-to-cart"],[data-action="add-to-cart"]',
-			mini: ''
+			variation: '.product-variant-id',
+			mini: '',
 		};
 		handlers = { };
 		
@@ -56,12 +57,16 @@
 				mode: 'new-project',
 				...params,
 			};
-			this.model.state.mode = params.mode || 'new-project';
-			if (this.model.env.noInstance) {
-				this.managePage();
-			} else {
-				this.createUi();
+
+			// this is needed should in case where the customer comes in with a pre-existing variation url and the app is auto-shown
+			// we will always pass the current variation value on app show for situations where customer clicks button to launch editor.. which is most cases
+			if (Object.keys(this.model.env.variants || {}).length && typeof PrintAppClient.getSelectedVariant() !== 'undefined') {
+				this.model.env.variant = PrintAppClient.getSelectedVariant();
 			}
+			
+			this.model.state.mode = params.mode || 'new-project';
+			if (this.model.env.noInstance) this.managePage();
+			else this.createUi();
 		}
 		async createUi() {
 			this.fire('ui:create');
@@ -101,6 +106,10 @@
 			// 	this.model.ui.frameParent?.insertBefore?.(this.model.ui.frame, this.model.ui.base);
 			// 	if (this.model.ui.frameParent) return;
 			// }
+
+			if (this.model.env.settings.displayMode === 'mini' && !(this.model.env.settings.miniSelector || PrintAppClient.SELECTORS.mini)) {
+				this.model.env.settings.displayMode = 'modal';
+			}
 			
 			switch (this.model.env.settings.displayMode) {
 				case 'mini':
@@ -325,6 +334,7 @@
 			this.model.state.shown = true;
 			this.sendMsg('app:show', {
 				artwork: event?.target?.dataset?.cmd === 'artwork',
+				variant: PrintAppClient.getSelectedVariant(),
 			});
 			this.setCommandPref();
 
@@ -671,6 +681,11 @@
 				width: rect.width,
 				height: rect.height
 			};
+		}
+
+		static getSelectedVariant() {
+			let variation = document.querySelector(PrintAppClient.SELECTORS.variation);
+			if (variation) return variation.value;
 		}
 
 		static async loadTag(url, attrs = {}) {
