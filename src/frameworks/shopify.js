@@ -43,9 +43,9 @@ if (typeof this.PrintAppShopify === "undefined") {
         async check() {
             if (window.printappset) return;
 
-            this.model.cartForm = window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm);
-            if (!this.model.productId)
-                this.model.productId = this.model.cartForm?.querySelector('input[name="product-id"]')?.value;
+            this.model.cartForm = window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+            const productId = this.model.cartForm?.querySelector('input[name="product-id"]')?.value;
+            if (productId) this.model.productId = productId;
 
             if (!this.model.cartForm || !this.model.productId) return;
 
@@ -242,15 +242,29 @@ if (typeof this.PrintAppShopify === "undefined") {
             } catch (e) { console.error(e) }
         }
         
-        static queryPrioritySelector(selectors) {
+        static queryPrioritySelector(selectors, visible) {
             const list = (typeof selectors === 'string') ? selectors.split(',') : selectors;
+            let firstAvailable = null; // Store the first available element if no visible elements are found
             for (let selector of list) {
                 const elements = document.querySelectorAll(selector);
                 for (let element of elements) {
-                    if (element?.offsetParent) return element;
+                    // Check if the element is in the document flow
+                    if (element?.offsetParent) {
+                        // If we're not specifically looking for a visible element, return the first one found
+                        if (!visible) return element;
+        
+                        // Check if the element is "visible" by checking its dimensions
+                        if (element?.offsetWidth > 0 && element?.offsetHeight > 0) {
+                            return element; // Return the first element that is visible
+                        }
+        
+                        // Keep the first encountered element in case no visible elements are found
+                        if (!firstAvailable) firstAvailable = element;
+                    }
                 }
             }
-            return null;
+            // Return the first available element if no visible element was found
+            return firstAvailable;
         }
     }
 }

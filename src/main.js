@@ -60,8 +60,9 @@
 
 			// this is needed should in case where the customer comes in with a pre-existing variation url and the app is auto-shown
 			// we will always pass the current variation value on app show for situations where customer clicks button to launch editor.. which is most cases
-			if (Object.keys(this.model.env.variants || {}).length && typeof PrintAppClient.getSelectedVariant() !== 'undefined') {
-				this.model.env.variant = PrintAppClient.getSelectedVariant();
+			if (Object.keys(this.model.env.variants || {}).length &&
+					typeof PrintAppClient.getSelectedVariant(this.model.env.settings?.customVariantSelector) !== 'undefined') {
+						this.model.env.variant = PrintAppClient.getSelectedVariant(this.model.env.settings?.customVariantSelector);
 			}
 			
 			this.model.state.mode = params.mode || 'new-project';
@@ -334,7 +335,7 @@
 			this.model.state.shown = true;
 			this.sendMsg('app:show', {
 				artwork: event?.target?.dataset?.cmd === 'artwork',
-				variant: PrintAppClient.getSelectedVariant(),
+				variant: PrintAppClient.getSelectedVariant(this.model.env.settings?.customVariantSelector),
 			});
 			this.setCommandPref();
 
@@ -446,7 +447,7 @@
 					break;
 					case 'app:ready':
 						this.appReady();
-						this.fire(message.event, message.data);
+						this.fire(message.event, message.data, true);
 					break;
 					case 'app:saved':
 						this.model.state.saved = true;
@@ -455,7 +456,7 @@
 							message.data.mode = 'edit-project';
 
 						this.saved(message.data);
-						this.fire(message.event, message.data);
+						this.fire(message.event, message.data, true);
 						this.closeApp();
 						this.setCommandPref();
 						this.updatePreviews();
@@ -463,18 +464,18 @@
 					break;
 					case 'app:closed':
 						this.model.state.closed = true;
-						this.fire(message.event, message.data);
+						this.fire(message.event, message.data, true);
 						this.closeApp();
 						this.setCommandPref();
 					break;
 					case 'app:validation:success':
 						this.model.settings = message.data.settings;
-						this.fire(message.event, message.data);
+						this.fire(message.event, message.data, true);
 						this.validationComplete()
 					break;
 					case 'app:validation:failed':
 						this.unload(message.data);
-						this.fire(message.event, message.data);
+						this.fire(message.event, message.data, true);
 					break;
 					case 'control:create':
 						this.createControl(message.data)
@@ -486,7 +487,7 @@
 						this.updateElement(message.data)
 					break;
 					default:
-						this.fire(message.event, message.data);
+						this.fire(message.event, message.data, true);
 					break;
 				}
 			}
@@ -583,6 +584,7 @@
 				if (handlers[i] === fnc) return;
 			}
 			handlers.push(fnc);
+			this.sendMsg('events:listen', { type });
 		}
 
 		off (type, fnc) {		// proxy to removeEventListener
@@ -600,15 +602,17 @@
 			}
 		}
 
-		fire (type, data) {
-			let handlers = this.handlers[type], i, len,
-				event = { type: type, data: data };
+		fire (type, data, fromFrame) {
+			let handlers = this.handlers[type], i, len, invoked,
+				event = { type, data };
 			if (handlers instanceof Array) {
 				handlers = handlers.concat();
 				for (i = 0, len = handlers.length; i < len; i++) {
 					handlers[i].call(this, event);
+					invoked = true;
 				}
 			}
+			if (!invoked && !fromFrame) this.sendMsg(type, data);
 		}
 
 		manageCartPage() {
@@ -683,9 +687,13 @@
 			};
 		}
 
-		static getSelectedVariant() {
-			let variation = document.querySelector(PrintAppClient.SELECTORS.variation);
+		static getSelectedVariant(custom) {
+			let variation = document.querySelector(custom || PrintAppClient.SELECTORS.variation);
 			if (variation) return variation.value;
+			const 	search = window.location.search,
+					regex = /[?&](variation|variant)=([^&]*)/i;
+			let match = search.match(regex);
+			return match ? match[2] : undefined;
 		}
 
 		static async loadTag(url, attrs = {}) {
