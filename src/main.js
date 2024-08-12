@@ -506,6 +506,15 @@
 					if (typeof element.value !== 'undefined') element.value = data.value;
 					element.dispatchEvent(new window.Event('change', { bubbles: true }));
 				break;
+				case 'FIELDSET':
+					if (typeof data.selectedIndex !== 'undefined') {
+						const input = element.querySelectorAll('input')[Number(data.selectedIndex)];
+						if (input) {
+							input.checked = true;
+							input.dispatchEvent(new window.Event('change', { bubbles: true }));
+						}
+					}
+				break;
 				case 'INPUT':
 					element.value = data.value;
 					element.dispatchEvent(new window.Event('input', { bubbles: true }));
@@ -533,6 +542,13 @@
 							value: target.value,
 							checked: target.checked,
 						};
+					case 'FIELDSET':
+						return {
+							value: target.querySelector('input:checked').value,
+							values: [...target.querySelectorAll('input')].map(i => ({ value: i.value, selected: i.checked })),
+							selectedIndex: [...target.querySelectorAll('input')].findIndex(i => i.checked),
+						};
+					break;
 				}
 				return {};
 			};
