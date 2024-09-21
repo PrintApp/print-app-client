@@ -502,8 +502,8 @@
 
 			switch (element.tagName) {
 				case 'SELECT':
-					if (typeof element.selectedIndex !== 'undefined') element.selectedIndex = data.selectedIndex;
-					if (typeof element.value !== 'undefined') element.value = data.value;
+					if (typeof data.selectedIndex !== 'undefined') element.selectedIndex = data.selectedIndex;
+					if (typeof data.value !== 'undefined') element.value = data.value;
 					element.dispatchEvent(new window.Event('change', { bubbles: true }));
 				break;
 				case 'FIELDSET':
