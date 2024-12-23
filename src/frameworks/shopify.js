@@ -113,6 +113,9 @@ if (typeof this.PrintAppShopify === "undefined") {
             this.model.clientMounted = true;
             this.model.instance.on('app:saved', data => this.projectSaved(data));
             this.model.instance.on('app:project:reset', data => this.clearProject(data));
+            setTimeout(() => {
+                if (currentValue.projectId) this.setAddToCartAction();
+            }, 1e3);
         }
 
         clearProject(value) {
@@ -171,7 +174,7 @@ if (typeof this.PrintAppShopify === "undefined") {
 			if (!cartButton) return;
 
 			const clearFnc = () =>
-				setTimeout(() => this.projectSaved({ data: { clear: true }}), 1000);
+				setTimeout(() => this.projectSaved({ data: { clear: true }}), 3000);
 
 			cartButton.removeEventListener('click', clearFnc);
 			cartButton.addEventListener('click', clearFnc);

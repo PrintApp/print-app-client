@@ -27,10 +27,10 @@ class PrintAppPrestashop extends PrintAppClient {
     async saveProject(e) {
         const data = {
             values: JSON.stringify(e.data),
-            id_product: this.params.product.id,
+            id_product: this.params.product?.id,
             ajax: 1
         };
-        await this.comm.post(this.params.product.url, data);
+        await this.comm.post(this.params.product?.url, data);
     }
 
     readyComm() {

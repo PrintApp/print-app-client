@@ -1,9 +1,11 @@
-/* global wp_ajax_url */// Added in the plugin via wp_localize_script
 
-/* PrintAppClient */// Created
+// Added in the plugin via wp_localize_script
+/* global wp_ajax_url */
+
+/* PrintAppClient */
 
 class PrintAppWordpress extends PrintAppClient {
-    constructor(params) {
+    constructor (params) {
         super({
             commandSelector: '#pa-buttons',
             previewsSelector: '.woocommerce-product-gallery,.product_image,.images,.single-product-image',
@@ -13,43 +15,49 @@ class PrintAppWordpress extends PrintAppClient {
         this.params = params;
         this.on('app:saved', this.saveProject);
         this.on('app:project:reset', this.resetProject);
-        this.readyComm();
     }
     
-    async resetProject(event) {
-        const data = { 'product_id': this.params.product.id, action: 'print_app_reset_project' };
-        await this.comm.post(window.printAppParams.wp_ajax_url, data);
-        window.location.reload();
+    async resetProject() {
+        const data = { 'product_id': this.params.product.id };
+        const reset = await this.post('print_app_reset_project', data);
+        if (reset) window.location.reload();
     }
     
     async saveProject(event) {
         const data = {
-            'action': 'print_app_save_project',
             'value': JSON.stringify(event.data),
-            'product_id': this.params.product.id
+            'product_id': this.params.product?.id
         };
-        await this.comm.post(window.printAppParams.wp_ajax_url, data);
+        const saved = await this.post('print_app_save_project', data);
+        console.log(saved);
     }
 
-    readyComm() {
-        const req   = new XMLHttpRequest();
-        this.comm   = {
-            post: (url, input) => new Promise((res, rej) => {
-                const data = new FormData();
-                Object.keys(input).forEach(key=>{
-                    data.append(key, input[key]);
-                });
-                req.onreadystatechange = function() {
-                    if (req.readyState == 4) {
-                        if (req.status == 200) 
-                            res(req.responseText);
-                        else
-                            rej(req.responseText);
-                    }
-                };
-                req.open('post', url);
-                req.send(data);
-            })
+    async post(action, data) {
+        try {
+            const formData = new URLSearchParams();
+            formData.append('action', action);
+            for (const key in data) {
+                if (data.hasOwnProperty(key)) {
+                    // Handle objects/arrays by stringifying them if necessary
+                    const value = (typeof data[key] === 'object') ? JSON.stringify(data[key]) : data[key];
+                    formData.append(key, value);
+                }
+            }
+            const options = {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'Accept': 'application/json, text/javascript, */*;',
+                },
+                body: formData.toString(),
+            };
+            const response = await fetch(window.printAppParams.wp_ajax_url, options);
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+            
+            return await response.json();
+
+        } catch (error) {
+            throw error;
         }
     }
 }

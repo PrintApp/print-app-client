@@ -5,14 +5,14 @@
 		static VERSION = '1.0';
 		static ENDPOINTS = {
 			cdnBase: 'https://editor.print.app/',
-			frameDomain: 'https://editor.print.app'
+			runBase: 'https://run.print.app/',
+			frameDomain: 'https://editor.print.app',
 		};
 
 		static SELECTORS = {
-			miniSelector: '#main > div.row > div:nth-child(1),.single-product-thumbnail,#content > div > div.col-sm-8 > ul.thumbnails',
+			mini: '#main > div.row > div:nth-child(1),.single-product-thumbnail,#content > div > div.col-sm-8 > ul.thumbnails,.main > .left',
 			cartButton: '.single_add_to_cart_button,.kad_add_to_cart,.addtocart,#add-to-cart,.add_to_cart,#add,#AddToCart,#product-add-to-cart,#add_to_cart,#button-cart,#AddToCart-product-template,.product-details-wrapper .add-to-cart,.btn-addtocart,.ProductForm__AddToCart,.add_to_cart_product_page,#addToCart,[name="add"],[data-button-action="add-to-cart"],[data-action="add-to-cart"]',
 			variation: '.product-variant-id',
-			mini: '',
 		};
 		handlers = { };
 		
@@ -43,20 +43,35 @@
 			this.init(params);
 		}
 		
-		init(params) {
+		async init(params) {
 			if (params.previews) {
 				if (typeof params.previews === 'string') params.previews = JSON.parse(params.previews);
 				this.model.session.previews = params.previews;
 			}
 			this.model.env = {
-				settings: {},
 				isAdmin: false,
 				customValues: {},
 				parentWidth: window.innerWidth,
 				parentHeight: window.innerHeight,
-				mode: 'new-project',
+				mode: params.artworkId ? 'artwork' : 'new-project',
 				...params,
 			};
+
+			if (!this.model.env.settings) {
+				const 	designId = this.model.env.designId || this.model.env.designList?.[0]?.id,
+						domainKey = this.model.env.domainKey;
+
+				const response = await window.fetch(`${PrintAppClient.ENDPOINTS.runBase}${domainKey}/*/?designId=${designId}&required=settings&lang=${this.model.langCode}`);
+				if (response.ok) {
+					const data = await response.json();
+					({ settings: this.model.env.settings, language: this.model.env.language } = data || {});
+				}
+			}
+			this.model.env.settings ??= {};
+			this.model.env.language ??= {};
+
+			if (params.settingsOverride)
+				this.model.env.settings = { ...this.model.env.settings, ...params.settingsOverride };
 
 			// this is needed should in case where the customer comes in with a pre-existing variation url and the app is auto-shown
 			// we will always pass the current variation value on app show for situations where customer clicks button to launch editor.. which is most cases
@@ -77,7 +92,7 @@
 			this.setMainDiv();
 			this.handleDisplayMode();
 			this.createCommandUI();
-			this.model.ui.cartButton = document.querySelector(this.model.env.settings?.cartButtonSelector || PrintAppClient.SELECTORS.cartButton);
+			this.model.ui.cartButton = PrintAppClient.queryPrioritySelector(this.model.env?.settings?.cartButtonSelector || PrintAppClient.SELECTORS.cartButton, true);
 			this.model.act.uiCreated = true;
 			this.runCustomScripts();
 			this.fire('ui:created');
@@ -96,17 +111,6 @@
 
 		handleDisplayMode() {
 			if (!this.model.env.settings.displayMode) this.model.env.settings.displayMode = 'modal';
-
-			// if (this.model.isMobile && this.model.ui.base) {
-			// 	this.model.ui.frame.classList.add('printapp-display-mini');
-			// 	this.model.ui.frame.classList.add('printapp-app-is-mobile');
-			// 	this.model.ui.frame.classList.remove('printapp-display-inline');
-			// 	this.model.ui.frame.classList.remove('printapp-display-modal');
-
-			// 	this.model.ui.frameParent = this.model.ui.base.parentNode;
-			// 	this.model.ui.frameParent?.insertBefore?.(this.model.ui.frame, this.model.ui.base);
-			// 	if (this.model.ui.frameParent) return;
-			// }
 
 			if (this.model.env.settings.displayMode === 'mini' && !(this.model.env.settings.miniSelector || PrintAppClient.SELECTORS.mini)) {
 				this.model.env.settings.displayMode = 'modal';
@@ -184,33 +188,33 @@
 							</div>
 							<div v-if="item.type === 'input'">
 								<label>{{item.title}}:</label>
-								<input @input="inputEvt" class="input" :type="item.inputType" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value" />
+								<input :data-title="item.title" @input="inputEvt" class="input" :type="item.inputType" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value" />
 							</div>
 							<div v-if="item.type === 'number'">
 								<label>{{item.title}}:</label>
-								<input @input="inputEvt" class="input" type="number" :name="item.id" :max="item.maxValue" :min="item.minValue" :type="item.inputType" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value" />
+								<input :data-title="item.title" @input="inputEvt" class="input" type="number" :name="item.id" :max="item.maxValue" :min="item.minValue" :type="item.inputType" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value" />
 							</div>
 							<div v-if="item.type === 'textarea'">
 								<label>{{item.title}}:</label>
-								<textarea @input="inputEvt" :row="item.rows" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value"></textarea>
+								<textarea :data-title="item.title" @input="inputEvt" :row="item.rows" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value"></textarea>
 							</div>
 							<div @change="changeEvt" v-if="item.type === 'select'">
 								<label>{{item.title}}:</label>
-								<select :value="item.value" :name="item.id">
+								<select :data-title="item.title" :value="item.value" :name="item.id">
 									<option v-for="option in item.options" v-model="option.value">{{option.title || option.value}}</option>
 								</select>
 							</div>
 							<div @change="changeEvt" v-if="item.type === 'switch'" class="switch-div">
 								<label :for="item.id">{{item.title}}</label>
 								<label class="switch">
-									<input :name="item.id" v-model="item.value" type="checkbox" />
+									<input :data-title="item.title" :name="item.id" v-model="item.value" type="checkbox" />
 									<span class="slider"></span>
 								</label>
 							</div>
 							<div @change="changeEvt" v-if="item.type === 'option'">
 								<label>{{item.title}}:</label>
 								<div v-for="option in item.options" class="option">
-									<input type="radio" :name="option.id" v-model="option.value" />
+									<input :data-title="item.title" type="radio" :name="option.id" v-model="option.value" />
 									<label :for="option.id"></label>
 								</div>
 							</div>
@@ -502,8 +506,11 @@
 
 			switch (element.tagName) {
 				case 'SELECT':
-					if (typeof data.selectedIndex !== 'undefined') element.selectedIndex = data.selectedIndex;
-					if (typeof data.value !== 'undefined') element.value = data.value;
+					if (typeof data.selectedIndex !== 'undefined') {
+						element.selectedIndex = data.selectedIndex;
+					} else if (typeof data.value !== 'undefined') {
+						element.value = data.value;
+					}
 					element.dispatchEvent(new window.Event('change', { bubbles: true }));
 				break;
 				case 'FIELDSET':
@@ -525,7 +532,10 @@
 
 		hookElement(data) {
 			if (!data?.selector) return;
-			const element = document.querySelector(data.selector);
+			let element;
+			try {
+				element = document.querySelector(data.selector);
+			} catch (e) { console.error(e) }
 			if (!element) return;
 
 			const elementValues = target => {
@@ -533,22 +543,24 @@
 					case 'SELECT':
 						return {
 							value: target.value,
-							text: target.options[target.selectedIndex].text,
-							values: [...target.options].map(o => ({ value: o.value, text: o.text, selected: o.selected })),
+							text: target.options[target.selectedIndex]?.text,
+							values: [...target.options].map(o => ({ value: o.value, text: o.text, title: o.text, selected: o.selected })),
 							selectedIndex: target.selectedIndex,
+							type: target.tagName,
 						};
 					case 'INPUT':
 						return {
 							value: target.value,
 							checked: target.checked,
+							type: target.tagName,
 						};
 					case 'FIELDSET':
 						return {
 							value: target.querySelector('input:checked').value,
 							values: [...target.querySelectorAll('input')].map(i => ({ value: i.value, selected: i.checked })),
 							selectedIndex: [...target.querySelectorAll('input')].findIndex(i => i.checked),
+							type: target.tagName,
 						};
-					break;
 				}
 				return {};
 			};
@@ -557,17 +569,20 @@
 			this.sendMsg(data.callbackEvent, {
 				selector: data.selector,
 				...elementValues(element),
-				event: 'init'
+				event: 'init',
+				callbackData: data.callbackData,
 			})
 
 			// then add the event listener...
-			element.addEventListener('change', e => {
+			const eventType = (element.tagName === 'BUTTON') ? 'click' : 'change'; 
+			element.addEventListener(eventType, evt => {
 				if (this.model.state._pauseDispatch) return;
 
 				this.sendMsg(data.callbackEvent, {
 					selector: data.selector,
-					...elementValues(e.target),
-					event: 'change',
+					...elementValues(evt.target),
+					event: eventType,
+					callbackData: data.callbackData,
 				})
 			})
 		}
@@ -678,8 +693,8 @@
 				.then(d => {
 					return d ? PrintAppClient.parse(d) : d;
 				}).then(response => {
-					if (response?.message?.statusCode && response.statusCode > 299) return response.message;
-					if (response && (typeof response.sessToken !== 'undefined')) {
+					if (response?.statusCode > 299) return response.message;
+					if (typeof response?.sessToken !== 'undefined') {
 						Storage.setSessToken(response.sessToken);
 						delete response.sessToken;
 					}
@@ -711,6 +726,31 @@
 			let match = search.match(regex);
 			return match ? match[2] : undefined;
 		}
+
+		static queryPrioritySelector(selectors, visible) {
+            const list = (typeof selectors === 'string') ? selectors.split(',') : selectors;
+            let firstAvailable = null; // Store the first available element if no visible elements are found
+            for (let selector of list) {
+                const elements = document.querySelectorAll(selector);
+                for (let element of elements) {
+                    // Check if the element is in the document flow
+                    if (element?.offsetParent) {
+                        // If we're not specifically looking for a visible element, return the first one found
+                        if (!visible) return element;
+        
+                        // Check if the element is "visible" by checking its dimensions
+                        if (element?.offsetWidth > 0 && element?.offsetHeight > 0) {
+                            return element; // Return the first element that is visible
+                        }
+        
+                        // Keep the first encountered element in case no visible elements are found
+                        if (!firstAvailable) firstAvailable = element;
+                    }
+                }
+            }
+            // Return the first available element if no visible element was found
+            return firstAvailable;
+        }
 
 		static async loadTag(url, attrs = {}) {
 			return new Promise((resolve) => {

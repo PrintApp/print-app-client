@@ -6,7 +6,8 @@ class PrintAppBigCommerce {
 	static PROJECTSKEY = 'print-app-bc-projects';
 	static ENDPOINTS = {
         apiBase: 'https://api.print.app/carts/',
-		baseCdn: 'https://editor.print.app/'
+		baseCdn: 'https://editor.print.app/',
+        runCdn: 'https://run.print.app/',
 	};
 
 	SELECTORS = { };
