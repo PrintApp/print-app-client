@@ -57,12 +57,14 @@ class PrintAppBigCommerce {
 
         // modifierId
         let nodes = document.querySelectorAll('[name^="attribute["]');
-        if (nodes) nodes.forEach(node => {
-            if (node.parentNode?.textContent?.includes('print-app')) {
-                this.model.modifierId = node.name.split('[')[1].split(']')[0];
-                node.parentNode.style.display = 'none';
-            }
-        });
+        if (nodes) {
+            nodes.forEach(node => {
+                if (node.parentNode?.textContent?.includes('print-app')) {
+                    this.model.modifierId = node.name.split('[')[1].split(']')[0];
+                    node.parentNode.style.display = 'none';
+                }
+            });
+        }
 
         const paData = await fetch(`${PrintAppBigCommerce.ENDPOINTS.runCdn}dom_bc_${this.model.storeId}/${this.model.productId}/bc?lang=${this.model.langCode}`)
                         .then(d => d.json())
@@ -121,15 +123,19 @@ class PrintAppBigCommerce {
         	projects = PrintAppBigCommerce.getStorage(PrintAppBigCommerce.PROJECTSKEY),
             element = this.getElement();
         	
-		if (data.clear) {
-            element.value = '';
-		    delete store[this.model.productId];
-		    delete projects[data.projectId];
-		} else {
-            element.value = data.projectId;
-		    store[this.model.productId] = data;
-		    projects[data.projectId] = data;
-		}
+        if (element) {
+            if (data.clear) {
+                element.value = '';
+                delete store[this.model.productId];
+                delete projects[data.projectId];
+            } else {
+                element.value = data.projectId;
+                store[this.model.productId] = data;
+                projects[data.projectId] = data;
+            }
+        } else {
+            console.error('print-app modifier element not found. Could be theme related.');
+        }
 	    window.localStorage.setItem(PrintAppBigCommerce.STORAGEKEY, JSON.stringify(store));
 	    window.localStorage.setItem(PrintAppBigCommerce.PROJECTSKEY, JSON.stringify(projects));
 	    if (data.clear) window.location.reload();

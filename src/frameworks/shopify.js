@@ -1,5 +1,6 @@
+// Dependencies: PrintAppClient
 
-if (typeof this.PrintAppShopify === "undefined") {
+if (typeof this.PrintAppShopify === 'undefined') {
     
     this.PrintAppShopify = class {
         static NAME = 'print-app-shopify';
