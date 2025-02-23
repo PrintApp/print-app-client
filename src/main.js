@@ -120,6 +120,7 @@
 					this.model.env.settings.displayMode = 'modal';
 				}
 				
+				var mounted = false;
 				switch (this.model.env.settings.displayMode) {
 					case 'mini':
 						this.model.ui.frame.classList.remove('printapp-display-modal');
@@ -129,6 +130,7 @@
 						if (this.model.ui.frameParent) {
 							this.model.ui.frameParent.innerHTML = '';
 							this.model.ui.frameParent.appendChild(this.model.ui.frame);
+							mounted = true;
 						}
 					break;
 					case 'inline':
@@ -137,20 +139,16 @@
 						this.model.ui.frame.classList.add('printapp-display-inline');
 						this.model.ui.frameParent = document.querySelector(this.model.env.settings.inlineSelector || '[null]');
 						this.model.ui.frameParent?.insertBefore?.(this.model.ui.frame, this.model.ui.frameParent.firstChild);
-					break;
-					default:
-						document.body.appendChild(this.model.ui.frame);
-						this.model.ui.frame.classList.add('printapp-display-modal');
-						this.model.ui.frame.classList.remove('printapp-display-inline');
-						this.model.ui.frame.classList.remove('printapp-display-mini');
+						mounted = true;
 					break;
 				}
 
-				if (!this.model.ui.frameParent) {
+				if (!mounted) {
+					this.model.ui.displayMode = this.model.env.settings.displayMode = 'modal';
+					document.body.appendChild(this.model.ui.frame);
 					this.model.ui.frame.classList.add('printapp-display-modal');
 					this.model.ui.frame.classList.remove('printapp-display-inline');
 					this.model.ui.frame.classList.remove('printapp-display-mini');
-					this.model.ui.displayMode = 'modal';
 				}
 
 			}
@@ -276,7 +274,7 @@
 			}
 
 			createControl(data) {
-				if (!data?.type) return;
+				if (!data?.type || !this.model.ui.vue) return;
 				this.model.ui.vue.items.push(data);
 			}
 			
@@ -344,6 +342,7 @@
 				this.sendMsg('app:show', {
 					artwork: event?.target?.dataset?.cmd === 'artwork',
 					variant: global.PrintAppClient.getSelectedVariant(this.model.env.settings?.customVariantSelector),
+					designId: event?.designId,
 				});
 				this.setCommandPref();
 
@@ -363,6 +362,11 @@
 			close() {
 				// proxy to closeApp...
 				this.closeApp();
+			}
+			destroyApp() {
+				this.fire('app:before:destroy');
+				this.model.ui.frame.remove();
+				this.fire('app:after:destroy');
 			}
 			closeApp() {
 				this.fire('app:before:close');
@@ -518,12 +522,15 @@
 						element.dispatchEvent(new window.Event('change', { bubbles: true }));
 					break;
 					case 'FIELDSET':
+						let input;
 						if (typeof data.selectedIndex !== 'undefined') {
-							const input = element.querySelectorAll('input')[Number(data.selectedIndex)];
-							if (input) {
-								input.checked = true;
-								input.dispatchEvent(new window.Event('change', { bubbles: true }));
-							}
+							input = element.querySelectorAll('input')[data.selectedIndex];
+						} else if (typeof data.value !== 'undefined') {
+							input = element.querySelector(`input[value="${data.value}"]`);
+						}
+						if (input) {
+							input.checked = true;
+							input.dispatchEvent(new window.Event('change', { bubbles: true }));
 						}
 					break;
 					case 'INPUT':

@@ -117,6 +117,8 @@ if (typeof this.PrintAppShopify === 'undefined') {
             setTimeout(() => {
                 if (currentValue.projectId) this.setAddToCartAction();
             }, 1e3);
+
+            window.PrintAppShopify.initCustomModifications();
         }
 
         clearProject(value) {
@@ -156,8 +158,8 @@ if (typeof this.PrintAppShopify === 'undefined') {
             }
         }
         setElementValue(value) {
-            let element = document.getElementById(`_printapp`),
-                pdfElement = document.getElementById(`_printapp-pdf-download`);
+            const   element = document.getElementById(`_printapp`),
+                    pdfElement = document.getElementById(`_printapp-pdf-download`);
 
             if (element) element.value = value;
             if (pdfElement) {
@@ -182,6 +184,27 @@ if (typeof this.PrintAppShopify === 'undefined') {
 	    }
 
         doClientAccount() { }
+
+        static initCustomModifications() {
+            
+            // Shoify BSS plugin fix...
+            window.bssFixSupportUpdateFormatBody = function (store, requestBody) {
+                if (!store || !requestBody?.items?.length) return requestBody;
+                const   element = document.getElementById(`_printapp`),
+                        pdfElement = document.getElementById(`_printapp-pdf-download`);
+
+                if (element?.value && pdfElement?.value) {
+                    requestBody.items[0].properties = {
+                        ...requestBody.items[0].properties,
+                        _printapp: element.value,
+                        _printapp_pdf_download: pdfElement.value,
+                    };
+
+                    // window?.printAppPrintShopifyInstance?.projectSaved?.({ data: { clear: true }})
+                }
+                return requestBody;
+            }
+        }
         
         static getStorage(key) {
             let r = window.localStorage.getItem(key);

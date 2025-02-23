@@ -1,0 +1,48 @@
+.printapp-embed {
+    display: block;
+    overflow-y: auto;
+}
+
+.printapp-embed > .printapp-embed-items {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.printapp-embed > .printapp-embed-items > .printapp-embed-item {
+    width: 200px;
+    margin: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.printapp-embed > .printapp-embed-items > .printapp-embed-item:hover > .embed-preview {
+    background-color: #8c8c8c3a;
+}
+
+.printapp-embed > .printapp-embed-items > .printapp-embed-item > .embed-preview {
+    width: 100%;
+    aspect-ratio: 1;
+    background-color: #8c8c8c1a;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    border-radius: 5px;
+    overflow: hidden;
+    cursor: pointer;
+    margin-bottom: 10px;
+}
+
+.printapp-embed > .printapp-embed-items > .printapp-embed-item > button {
+    width: 100%;
+    border-radius: 40px;
+    padding: 10px 20px;
+    border: none;
+    cursor: pointer;
+    font-weight: medium;
+}
+
+.printapp-embed > .printapp-embed-items > .printapp-embed-item > button >* {
+    pointer-events: none;
+}
