@@ -61,6 +61,8 @@
 					...params,
 				};
 
+				this.initCook()
+
 				if (!this.model.env.settings) {
 					const 	designId = this.model.env.designId || this.model.env.designList?.[0]?.id,
 							domainKey = this.model.env.domainKey;
@@ -666,6 +668,17 @@
 			}
 			managePage() {
 				if (this.model.state.page === 'cart') return this.manageCartPage();
+			}
+
+			initCook() {
+				if (this.model.env?.cookieKey) {
+					const check = document.cookie.match(new RegExp('(^| )' + this.model.env.cookieKey + '=([^;]+)'));
+					if (!check) {
+						const value = Math.random().toString(36).substring(2, 15) + '.' + Math.random().toString(36).substring(2, 15);
+						const age = 60 * 60 * 24 * 30;
+						document.cookie = `${this.model.env.cookieKey}=${value}; path=/; max-age=${age}; SameSite=Lax`;
+					}
+				}
 			}
 
 			static async comm(url, data, method = 'POST', useFormData = false) {

@@ -13,6 +13,7 @@
         "tailwindcss": "^3.1.8"
     },
     "dependencies": {
+        "dotenv": "^16.5.0",
         "gulp": "^4.0.2",
         "gulp-cloudfront-invalidate": "^0.1.6",
         "gulp-s3-upload": "^1.7.3"
