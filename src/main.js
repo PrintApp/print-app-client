@@ -67,7 +67,7 @@
 					const 	designId = this.model.env.designId || this.model.env.designList?.[0]?.id,
 							domainKey = this.model.env.domainKey;
 
-					const response = await window.fetch(`${global.PrintAppClient.ENDPOINTS.runBase}${domainKey}/*/?designId=${designId}&required=settings&lang=${this.model.langCode}`);
+					const response = await window.fetch(`${global.PrintAppClient.ENDPOINTS.runBase}${domainKey}/*/?designId=${designId}&required=settings&lang=${this.model.env?.langCode || this.model.langCode}`);
 					if (response.ok) {
 						const data = await response.json();
 						({ settings: this.model.env.settings, language: this.model.env.language } = data || {});
@@ -538,6 +538,7 @@
 					case 'INPUT':
 						element.value = data.value;
 						element.dispatchEvent(new window.Event('input', { bubbles: true }));
+						element.dispatchEvent(new window.Event('change', { bubbles: true }));
 					break;
 				}
 				setTimeout(() => this.model.state._pauseDispatch = false, 100);
