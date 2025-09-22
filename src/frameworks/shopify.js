@@ -114,73 +114,70 @@ if (typeof this.PrintAppShopify === 'undefined') {
             this.model.clientMounted = true;
             this.model.instance.on('app:saved', data => this.projectSaved(data));
             this.model.instance.on('app:project:reset', data => this.clearProject(data));
+
             setTimeout(() => {
                 if (currentValue.projectId) this.setAddToCartAction();
             }, 1e3);
+
+            // document.addEventListener('shopify:item-added', () => {
+            //     console.log('Shopify Add to Cart detected, clearing project');
+            //     this.clearProject({ projectId: this.model.currentProjectId });
+            // });
+            // window.PrintAppShopify.trackAddToCart();
 
             window.PrintAppShopify.initCustomModifications();
         }
 
         clearProject(value) {
-            const { projectId } = value;
-            let store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY),
-                projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
+            const   { projectId } = value;
+            const   store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY),
+                    projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
 
-            this.setElementValue('');
             delete store[this.model.productId];
-            delete projects[projectId];
-
+            delete projects[projectId || this.model.currentProjectId];
+            
             window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
             window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
-            window.location.reload();
+            
+            setTimeout(() => {
+                window.location.reload();
+                this.setElementValue('');
+            }, 3e3);
         }
         projectSaved(value) {
             const { data } = value;
+            this.model.currentProjectId = data.projectId;
             
-            let store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY),
-                projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
+            const   store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY),
+                    projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
                 
-            if (data.clear) {
-                this.setElementValue('');
-                delete store[this.model.productId];
-                delete projects[data.projectId];
-            } else {
-                this.setElementValue(data.projectId);
-                store[this.model.productId] = data;
-                projects[data.projectId] = data;
-            }
+            
+            this.setElementValue(data.projectId);
+            store[this.model.productId] = data;
+            projects[data.projectId || this.model.currentProjectId] = data;
+
             window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
             window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
-            if (data.clear) {
-                window.location.reload();
-            } else {
-                this.setAddToCartAction();
-            }
+
+            this.setAddToCartAction();
         }
         setElementValue(value) {
             const   element = document.getElementById(`_printapp`),
                     pdfElement = document.getElementById(`_printapp-pdf-download`);
 
             if (element) element.value = value;
-            if (pdfElement) {
-                if (value) {
-                    pdfElement.value = `${window.PrintAppShopify.ENDPOINTS.pdf}${value}`;
-                } else {
-                    pdfElement.value = '';
-                }
-            }
+            if (pdfElement) pdfElement.value = value ? `${window.PrintAppShopify.ENDPOINTS.pdf}${value}` : '';
         }
         setAddToCartAction() {
 			if (!this.model.instance || (this.model.instance?.model?.env?.settings?.displayMode === 'mini')) return;
             const   paInstance = this.model.instance,
                     cartButton = paInstance?.model?.ui?.cartButton;
-			if (!cartButton) return;
+            if (!cartButton) return;
 
-			const clearFnc = () =>
-				setTimeout(() => this.projectSaved({ data: { clear: true }}), 3000);
+            const clearFnc = () => this.clearProject({ projectId: this.model.currentProjectId });
 
-			cartButton.removeEventListener('click', clearFnc);
-			cartButton.addEventListener('click', clearFnc);
+            cartButton.removeEventListener('click', clearFnc);
+            cartButton.addEventListener('click', clearFnc);
 	    }
 
         doClientAccount() { }
@@ -268,6 +265,84 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 return JSON.parse(string);
             } catch (e) { console.error(e) }
         }
+
+        static trackAddToCart() {
+            // Use Symbols to avoid collisions and support idempotency
+            const SYM = {
+                patchedFetch: Symbol.for('shopifyCartWatcher.patchedFetch'),
+                patchedXHR: Symbol.for('shopifyCartWatcher.patchedXHR'),
+            };
+
+            const isCartAdd = (url) => {
+                try {
+                    const u = new URL(typeof url === 'string' ? url : url.url, location.origin);
+                    // normalize trailing slash
+                    return u.pathname.replace(/\/+$/, '') === '/cart/add.js';
+                } catch {
+                    return typeof url === 'string' && url.includes('/cart/add.js');
+                }
+            };
+
+            const fire = () => {
+                try {
+                    document.dispatchEvent(new CustomEvent('shopify:item-added'));
+                } catch (_) {}
+            };
+
+            // ---- fetch ----
+            if (!window[SYM.patchedFetch]) {
+                const _fetch = window.fetch;
+                window.fetch = async function(input, init) {
+                const res = await _fetch.apply(this, arguments);
+                try {
+                    const url = typeof input === 'string' ? input : input && input.url;
+                    if (isCartAdd(url) && res && res.ok) fire();
+                } catch (_) {}
+                    return res;
+                };
+                Object.defineProperty(window, SYM.patchedFetch, { value: true });
+            }
+
+            // ---- XHR ----
+            if (!XMLHttpRequest[SYM.patchedXHR]) {
+                const open = XMLHttpRequest.prototype.open;
+                const send = XMLHttpRequest.prototype.send;
+
+                XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                this.__shopifyCartURL = url;
+                return open.call(this, method, url, ...rest);
+                };
+
+                XMLHttpRequest.prototype.send = function(body) {
+                try {
+                    this.addEventListener('loadend', () => {
+                    try {
+                        if (isCartAdd(this.__shopifyCartURL) && this.status >= 200 && this.status < 300) {
+                        fire();
+                        }
+                    } catch (_) {}
+                    });
+                } catch (_) {}
+                    return send.call(this, body);
+                };
+
+                Object.defineProperty(XMLHttpRequest, SYM.patchedXHR, { value: true });
+            }
+
+            // (Optional best-effort) Non-AJAX form submits. Fires *before* navigation.
+            document.addEventListener('submit', (e) => {
+                try {
+                    const form = e.target;
+                    if (!(form instanceof HTMLFormElement)) return;
+                    const action = form.getAttribute('action') || '';
+                    if (action.startsWith('/cart/add')) {
+                        // Best effort; may navigate away immediately
+                        // Comment out if you strictly want only confirmed 2xx adds.
+                        document.dispatchEvent(new CustomEvent('shopify:item-added:attempt'));
+                    }
+                } catch (_) {}
+            }, true);
+        }
         
         static queryPrioritySelector(selectors, visible) {
             const list = (typeof selectors === 'string') ? selectors.split(',') : selectors;
@@ -298,15 +373,14 @@ if (typeof this.PrintAppShopify === 'undefined') {
 
 (function(global) {
     if (!global.printAppPrintShopifyInstance) {
-        let params = {
-            productPage: window.location.pathname.includes('/products'),
-            cartPage: window.location.pathname.includes('/cart'),
-            accountPage: window.location.pathname.includes('/account'),
-            hostname: window.location.hostname,
-            storeId: window.Shopify.shop,
-            productId: window.__st.rid,
-        };
-        global.printAppPrintShopifyInstance = global.printAppPrintShopifyInstance || new PrintAppShopify(params);
+        const params = {
+                productPage: window.location.pathname.includes('/products'),
+                cartPage: window.location.pathname.includes('/cart'),
+                accountPage: window.location.pathname.includes('/account'),
+                hostname: window.location.hostname,
+                storeId: window.Shopify.shop,
+                productId: window.__st.rid,
+            };
+        global.printAppPrintShopifyInstance ??= new PrintAppShopify(params);
     }
-
 })(this);
