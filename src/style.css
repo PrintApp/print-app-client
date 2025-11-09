@@ -159,3 +159,139 @@
     -ms-transform: translateX(26px);
     transform: translateX(26px);
 }
+
+/* styling for print app user projects */
+.printapp-projects {
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+}
+
+.printapp-projects-title {
+    font-size: 2.5rem;
+    font-weight: 300;
+    margin: 0 0 2rem 0;
+    padding: 0;
+}
+
+.printapp-project {
+    display: grid;
+    grid-template-columns: 200px 1fr auto;
+    gap: 1.5rem;
+    align-items: center;
+    padding: 1.5rem;
+    border: 1px solid #e5e7eb;
+    margin-bottom: 1rem;
+    background: #ffffff;
+}
+
+.printapp-project-preview {
+    width: 200px;
+    height: 150px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.printapp-project-preview img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.printapp-project-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.printapp-project-name {
+    font-size: 1rem;
+    font-weight: 400;
+    color: #1f2937;
+}
+
+.printapp-project-date {
+    font-size: 0.875rem;
+    color: #6b7280;
+}
+
+.printapp-project-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.printapp-project-btn {
+    padding: 0.75rem 1.5rem;
+    line-height: normal;
+    border: 2px solid #607d8b;
+    background: #ffffff;
+    color: #607d8b;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.printapp-project-btn > * {
+    pointer-events: none;
+}
+
+.printapp-project-btn:hover {
+    background: #607d8b;
+    color: #ffffff;
+}
+
+.printapp-project-btn-duplicate {
+    /* primary duplicate button */
+}
+
+.printapp-project-btn-preview,
+.printapp-project-btn-delete {
+    min-width: 50px;
+    padding: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.printapp-icon-preview,
+.printapp-icon-delete {
+    font-size: 1.25rem;
+    display: inline-block;
+}
+
+.printapp-project-btn-delete {
+    border-color: #dc2626;
+    color: #dc2626;
+}
+
+.printapp-project-btn-delete:hover {
+    background: #dc2626;
+    color: #ffffff;
+}
+
+/* Responsive design for mobile */
+@media (max-width: 768px) {
+    .printapp-project {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .printapp-project-preview {
+        width: 100%;
+        margin: 0 auto;
+    }
+    
+    .printapp-project-actions {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .printapp-project-btn {
+        width: 100%;
+    }
+}

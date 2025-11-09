@@ -88,8 +88,12 @@
 				
 				this.model.state.mode = params.mode || 'new-project';
 				if (this.model.env.noInstance) this.managePage();
+				else if (this.model.env.renderUserProjects) this.renderUserProjects();
 				else this.createUi();
 			}
+			
+			renderUserProjects() {}		// to be overridden in wordpress.js
+
 			async createUi() {
 				this.fire('ui:create');
 				this.loadStyling();
