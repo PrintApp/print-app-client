@@ -214,16 +214,15 @@ if (typeof this.PrintAppShopify === 'undefined') {
                         .then(d => d.json()).catch(console.log);
             if (!data?.items) return;
 
-            var value, string,
+            var string,
                 imageSelector = '.line-item__image-wrapper > .aspect-ratio, .cart-line-image,.product_image,.cart_image,.product-image,.cpro_item_inner,.cart__image,.cart-image,.cart-item .image,.cart-item__image-container,.cart_page_image,.tt-cart__product_image,.CartItem__ImageWrapper,div.description.cf > a,.product-img, .cart-item-wrapper>.cart-item-block-left .cart-item-image img, .order-summary__body>tr>td>.line-item>.line-item__media-wrapper, .image-wrap>image-element>.image-element',
                 images = document.querySelectorAll(imageSelector);
-            const projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
             
             data.items.forEach((item, index) => {
                 if (item?.properties?.['_printapp']) {
-                    value = projects[item.properties['_printapp']];
+                    const url = `${window.PrintAppShopify.ENDPOINTS.runCdn}preview/${item.properties['_printapp']}`;
                     
-                    string = `<div><img src="${value.previews[0].url}" width="94" style="margin: 5px; opacity: 1"><br/></div>`;
+                    string = `<div><img src="${url}" width="94" style="margin: 5px; opacity: 1"><br/></div>`;
                     let img = images[index];
                     if (img) {
                         if (img.tagName === 'IMG') {
