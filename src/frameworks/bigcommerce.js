@@ -34,9 +34,9 @@ class PrintAppBigCommerce {
         if (metaLangTag) this.model.langCode = metaLangTag.getAttribute('content') || this.model.langCode;
 	
         const fn = () => setTimeout(() => {
-            window.pprintset = false;
+            window.printappset = false;
             this.check();
-        }, 1500);
+        }, 3e3);
         const qry = document.querySelectorAll('.quickview');
         if (qry) qry.forEach(btn => btn.addEventListener('click', fn));
 
@@ -45,14 +45,14 @@ class PrintAppBigCommerce {
 
     async check() {
         var el = document.querySelector('[name="product_id"]');
-        if (window.pprintset || !el) return;
+        if (window.printappset || !el) return;
 
         const  cartForm = document.querySelector('[data-cart-item-add],#form-action-addToCart');
         if (!cartForm) return;
 
         const productId = Number(el.value);
         cartForm.insertAdjacentHTML('afterbegin', `<div id="pa-buttons"><img src="${PrintAppBigCommerce.ENDPOINTS.baseCdn}assets/images/loader.svg"style="width:2rem"></div>`);
-        window.pprintset = true;
+        window.printappset = true;
         this.model.productId = productId;
 
         // modifierId
