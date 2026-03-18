@@ -37,28 +37,43 @@ if (typeof this.PrintAppShopify === 'undefined') {
             if (metaLangTag) this.model.langCode = metaLangTag.getAttribute('content') || this.model.langCode;
 
             await this.getUser();
-            window.addEventListener('DOMContentLoaded', this.check);
+            window.addEventListener('DOMContentLoaded', () => this.check());
             this.check();
         }
 
         async check() {
             if (window.printappset) return;
-
-            this.model.cartForm = window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
-            const productId = this.model.cartForm?.querySelector('input[name="product-id"]')?.value;
-            if (productId) this.model.productId = productId;
-
-            if (!this.model.cartForm || !this.model.productId) return;
-
-            this.model.cartForm.insertAdjacentHTML('afterbegin', `<div id="pa-buttons"><img src="${window.PrintAppShopify.ENDPOINTS.baseCdn}assets/images/loader.svg"style="width:2rem"></div>`);
             window.printappset = true;
+            const paButtons = `<div id="pa-buttons"><img src="${window.PrintAppShopify.ENDPOINTS.baseCdn}assets/images/loader.svg" style="width:2rem"></div>`;
 
+            const liquidForm = document.getElementById('print-app-shopify-mount');
+            if (liquidForm?.dataset?.productId) {
+                this.model.productId = liquidForm.dataset.productId;
+                this.model.cartForm = liquidForm.closest('form') || 
+                                        window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+                
+                if (!this.model.cartForm || !this.model.productId) return;
+                liquidForm.insertAdjacentHTML('afterbegin', paButtons);
+
+            } else {
+                this.model.cartForm = window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+                const productId = this.model.cartForm?.querySelector('input[name="product-id"]')?.value;
+                if (productId) this.model.productId = productId;
+                if (!this.model.cartForm || !this.model.productId) return;
+                this.model.cartForm.insertAdjacentHTML('afterbegin', paButtons);
+
+            }
+            
             const paData = await fetch(`${window.PrintAppShopify.ENDPOINTS.runCdn}dom_sp_${this.model.storeId}/${this.model.productId}/sp?lang=${this.model.langCode}`)
-                                .then(d => d.json())
-                                .catch(console.log);
+                                .then(d => d.json()).catch(console.error);
 
-            if (!paData?.designs?.length && !paData?.artwork && !Object.keys(paData?.variants || {}).length) {
-                let sec = document.getElementById('pa-buttons');
+            if (!paData) {
+                document.getElementById('pa-buttons')?.remove();
+                return;
+            }
+
+            if (!paData.designs?.length && !paData.artwork && !Object.keys(paData.variants || {}).length) {
+                const sec = document.getElementById('pa-buttons');
                 return sec?.remove?.();
             }
             this.model.designData = paData;
@@ -139,9 +154,9 @@ if (typeof this.PrintAppShopify === 'undefined') {
             window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
             window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
             
+            this.setElementValue('');
             setTimeout(() => {
                 window.location.reload();
-                this.setElementValue('');
             }, 3e3);
         }
         projectSaved(value) {
@@ -174,10 +189,9 @@ if (typeof this.PrintAppShopify === 'undefined') {
                     cartButton = paInstance?.model?.ui?.cartButton;
             if (!cartButton) return;
 
-            const clearFnc = () => this.clearProject({ projectId: this.model.currentProjectId });
-
-            cartButton.removeEventListener('click', clearFnc);
-            cartButton.addEventListener('click', clearFnc);
+            if (this._clearHandler) cartButton.removeEventListener('click', this._clearHandler);
+            this._clearHandler = () => this.clearProject({ projectId: this.model.currentProjectId });
+            cartButton.addEventListener('click', this._clearHandler);
 	    }
 
         doClientAccount() { }
@@ -215,27 +229,35 @@ if (typeof this.PrintAppShopify === 'undefined') {
             if (!data?.items) return;
 
             var string,
-                imageSelector = '.line-item__image-wrapper > .aspect-ratio, .cart-line-image,.product_image,.cart_image,.product-image,.cpro_item_inner,.cart__image,.cart-image,.cart-item .image,.cart-item__image-container,.cart_page_image,.tt-cart__product_image,.CartItem__ImageWrapper,div.description.cf > a,.product-img, .cart-item-wrapper>.cart-item-block-left .cart-item-image img, .order-summary__body>tr>td>.line-item>.line-item__media-wrapper, .image-wrap>image-element>.image-element',
+                imageSelector = '.line-item__image-wrapper > .aspect-ratio, .cart-line-image,.product_image,.cart_image,.product-image,.cpro_item_inner,.cart__image,.cart-image,.cart-item .image,.cart-item__image-container,.cart_page_image,.tt-cart__product_image,.CartItem__ImageWrapper,div.description.cf > a,.product-img, .cart-item-wrapper>.cart-item-block-left .cart-item-image img, .order-summary__body>tr>td>.line-item>.line-item__media-wrapper, .image-wrap>image-element>.image-element, .cart-item__media',
                 images = document.querySelectorAll(imageSelector);
             
             data.items.forEach((item, index) => {
                 if (item?.properties?.['_printapp']) {
-                    const url = `${window.PrintAppShopify.ENDPOINTS.runCdn}preview/${item.properties['_printapp']}`;
-                    
-                    string = `<div><img src="${url}" width="94" style="margin: 5px; opacity: 1"><br/></div>`;
+                    const projectId = item.properties['_printapp'];
+                    if (!/^[a-zA-Z0-9_-]+$/.test(projectId)) return;
+
+                    const url = `${window.PrintAppShopify.ENDPOINTS.runCdn}preview/${encodeURIComponent(projectId)}`;
+                    const div = document.createElement('div');
+                    const newImg = document.createElement('img');
+                    newImg.src = url;
+                    newImg.width = 94;
+                    newImg.style.cssText = 'margin: 5px; opacity: 1';
+                    div.appendChild(newImg);
+                    div.appendChild(document.createElement('br'));
+
                     let img = images[index];
                     if (img) {
-                        if (img.tagName === 'IMG') {
-                            img.parentNode.innerHTML = string;
-                        } else {
-                            img.innerHTML = string;
-                        }
+                        const target = img.tagName === 'IMG' ? img.parentNode : img;
+                        target.textContent = '';
+                        target.appendChild(div);
                     }
                 }
             });
         }
 
         static async loadTag(url) {
+            if (document.querySelector(`script[src="${url}"]`) || document.querySelector(`link[href="${url}"]`)) return;
             return new Promise((resolve) => {
                 var tag;
                 if (url.endsWith('.css')) {
@@ -249,6 +271,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
                     tag.src = url;
                 }
                 tag.onload = resolve;
+                tag.onerror = resolve;
             });
         }
         async getUser() {
@@ -382,4 +405,4 @@ if (typeof this.PrintAppShopify === 'undefined') {
             };
         global.printAppPrintShopifyInstance ??= new PrintAppShopify(params);
     }
-})(this);
+})(globalThis);

@@ -196,15 +196,15 @@
 								</div>
 								<div v-if="item.type === 'input'">
 									<label>{{item.title}}:</label>
-									<input :data-title="item.title" @input="inputEvt" class="input" :type="item.inputType" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value" />
+									<input :data-title="item.title" @input="inputEvt" @focus="focusEvt" class="input" :type="item.inputType" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value" />
 								</div>
 								<div v-if="item.type === 'number'">
 									<label>{{item.title}}:</label>
-									<input :data-title="item.title" @input="inputEvt" class="input" type="number" :name="item.id" :max="item.maxValue" :min="item.minValue" :type="item.inputType" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value" />
+									<input :data-title="item.title" @input="inputEvt" @focus="focusEvt" class="input" type="number" :name="item.id" :max="item.maxValue" :min="item.minValue" :type="item.inputType" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value" />
 								</div>
 								<div v-if="item.type === 'textarea'">
 									<label>{{item.title}}:</label>
-									<textarea :data-title="item.title" @input="inputEvt" :row="item.rows" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value"></textarea>
+									<textarea :data-title="item.title" @input="inputEvt" @focus="focusEvt" :row="item.rows" :name="item.id" :placeholder="item.placeholder || ''" v-model="item.value"></textarea>
 								</div>
 								<div @change="changeEvt" v-if="item.type === 'select'">
 									<label>{{item.title}}:</label>
@@ -252,6 +252,7 @@
 					clickEvt: this.controlClick.bind(this),
 					changeEvt: this.controlChange.bind(this),
 					inputEvt: this.controlInput.bind(this),
+					focusEvt: this.controlFocus.bind(this),
 				})
 
 				PetiteVue.createApp(this.model.ui.vue).mount('#print-app-container')
@@ -277,6 +278,12 @@
 					item = this.model.ui.vue.items.find(i => i.id === id);
 
 				this.sendMsg('control:change', { eventType: 'input', data: item })
+			}
+			controlFocus(event) {
+				let id = event?.target?.name,
+					item = this.model.ui.vue.items.find(i => i.id === id);
+
+				this.sendMsg('control:focus', { eventType: 'focus', data: item });
 			}
 
 			createControl(data) {
