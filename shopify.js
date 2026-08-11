@@ -16,8 +16,6 @@ if (typeof this.PrintAppShopify === 'undefined') {
         static SELECTORS = {
             previews: '.product__media-wrapper,.image,#product-photo-container,.product-left-column,.main-image,.product-photo-container,.featured,#image-block,.product-single-photos,.product_slider,#product-image,.photos,.product-single__photos,.image__container,.product-gallery',
             cartForm: '[data-type="add-to-cart-form"],[action="/cart/add"],[action="/cart/add.js"],#add-item-form,#add-to-cart-form,[action$="/cart/add"], #AddToCartForm',
-            cartDrawer: '#aov-cart-drawer,cart-drawer,cart-notification,#CartDrawer,.cart-drawer,#mini-cart,.mini-cart,.minicart,.drawer--cart,#sidebar-cart,.cart-popup,.ajaxcart,#slidecarthq,.upcart-cart-body',
-            drawerLineItem: '.cart-items__table-row,.AOV-CartDrawer-Item,[data-line-item-key],[data-cart-item-key],[data-cart-item],.cart-item,.cart__item,.cart-drawer-item,.mini-cart__item,.line-item,.ajaxcart__product',
         };
         model = { };
 
@@ -32,22 +30,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
             if (!this.model.hostname) return console.error('This script needs to be loaded via wire');
 
             if (this.model.accountPage) return this.doClientAccount();
-            if (this.model.cartPage) {
-                await this.setCartImages();
-                // The floating drawer can be opened on the cart page too — keep it in sync.
-                if (this._cartData?.items?.some(item => item?.properties?.['_printapp'])) this.armDrawerPreviews();
-                return;
-            }
-
-            // Floating cart drawers / mini-carts re-render after ajax cart mutations,
-            // so the one-shot cart-page replacement never reaches them. Only arm the
-            // drawer watcher when this browser is known to hold Print.App projects
-            // and a cart exists — product pages (re)arm in mountClient() once the
-            // product's designs are confirmed.
-            const savedProjects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
-            if (Object.keys(savedProjects || {}).length && /(?:^|;\s*)cart=/.test(document.cookie)) {
-                this.armDrawerPreviews();
-            }
+            if (this.model.cartPage) return await this.setCartImages();
 
             this.model.langCode = document.querySelector('html').getAttribute('lang') || 'en';
             let metaLangTag = document.querySelector('[name="language-code"]');
@@ -155,11 +138,11 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 this.observeFormRerenders();
             }
 
-            // This product is customizable — watch for floating-cart re-renders so
-            // customized line items keep their project previews.
-            if (!this.model.designData?.settings?.disableCartDrawerPreviews) {
-                this.armDrawerPreviews();
-            }
+            // document.addEventListener('shopify:item-added', () => {
+            //     console.log('Shopify Add to Cart detected, clearing project');
+            //     this.clearProject({ projectId: this.model.currentProjectId });
+            // });
+            // window.PrintAppShopify.trackAddToCart();
 
             window.PrintAppShopify.initCustomModifications();
         }
@@ -170,6 +153,39 @@ if (typeof this.PrintAppShopify === 'undefined') {
         // that don't need it.
         observeFormRerenders() {
             if (this._formObserver) return;
+
+            // Resolve the scoped root: prefer the liquid mount's form parent, else the cart form's parent.
+            // Walk up one extra level if the immediate parent looks like just the form wrapper, to
+            // survive themes that replace the wrapper too.
+            const resolveRoot = () => {
+                const liquidForm = document.getElementById('print-app-shopify-mount');
+                const form = (liquidForm?.dataset?.productId && liquidForm.closest('form'))
+                    || this.model.cartForm
+                    || window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+                if (!form) return null;
+                // Use the grandparent when possible — gives one level of safety if the immediate
+                // wrapper gets swapped. Falls back to parent, then form itself.
+                return  form.parentElement?.parentElement?.parentElement ||
+                        form.parentElement?.parentElement ||
+                        form.parentElement || form;
+            };
+
+            const attach = () => {
+                const root = resolveRoot();
+                if (!root) return false;
+                if (this._formObserver) this._formObserver.disconnect();
+                this._observeRoot = root;
+                this._formObserver = new MutationObserver(mutations => {
+                    for (const m of mutations) {
+                        if (m.addedNodes.length || m.removedNodes.length) {
+                            schedule();
+                            return;
+                        }
+                    }
+                });
+                this._formObserver.observe(root, { childList: true, subtree: true });
+                return true;
+            };
 
             const restore = () => {
                 // Already present — nothing to do (also breaks the self-trigger loop).
@@ -209,6 +225,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 if (instance?.createCommandUI) {
                     instance.model.ui.base = document.getElementById('pa-buttons');
                     // Re-resolve the cart button since it likely got replaced too.
+                    // Only use the configured/default selectors — no aggressive fallback.
                     const cartSelector = instance.model.env?.settings?.cartButtonSelector
                         || (window.PrintAppClient && window.PrintAppClient.SELECTORS?.cartButton);
                     if (cartSelector) {
@@ -221,6 +238,11 @@ if (typeof this.PrintAppShopify === 'undefined') {
                         if (this.model.currentProjectId || stored) this.setAddToCartAction();
                     }, 0);
                 }
+
+                // The form's ancestor we were observing may itself have been replaced —
+                // re-attach to the freshly resolved root so future re-renders are caught.
+                const currentRoot = resolveRoot();
+                if (currentRoot && currentRoot !== this._observeRoot) attach();
             };
 
             // Debounce so a burst of mutations triggers one restore.
@@ -234,17 +256,11 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 });
             };
 
-            // Watch document.body for structural changes (additions/removals of children)
-            this._formObserver = new MutationObserver(() => {
-                if (!document.getElementById('pa-buttons')) {
-                    schedule();
-                }
-            });
-            this._formObserver.observe(document.body, { childList: true, subtree: true });
+            attach();
         }
 
         clearProject(value) {
-            const   { projectId, keepInput } = value || {};
+            const   { projectId } = value;
             const   store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY),
                     projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
 
@@ -254,7 +270,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
             window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
             window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
             
-            if (!keepInput) this.setElementValue('');
+            this.setElementValue('');
             setTimeout(() => {
                 window.location.reload();
             }, 3e3);
@@ -290,11 +306,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
             if (!cartButton) return;
 
             if (this._clearHandler) cartButton.removeEventListener('click', this._clearHandler);
-            this._clearHandler = () => {
-                setTimeout(() => {
-                    this.clearProject({ projectId: this.model.currentProjectId, keepInput: true });
-                }, 2e3);
-            };
+            this._clearHandler = () => this.clearProject({ projectId: this.model.currentProjectId });
             cartButton.addEventListener('click', this._clearHandler);
 	    }
 
@@ -331,25 +343,12 @@ if (typeof this.PrintAppShopify === 'undefined') {
             const data = await fetch('/cart.js')
                         .then(d => d.json()).catch(console.log);
             if (!data?.items) return;
-            this._cartData = data;
-            if (!data.items.some(item => item?.properties?.['_printapp'])) return;
 
-            // Identity-matched, non-destructive replacement — the same engine the
-            // floating drawer uses. Only when it can't recognize any line-item row
-            // does the legacy index-based replacement run, so old themes that
-            // depend on it keep working.
-            const applied = this.applyPreviewsInRoot(document, data.items);
-            if (!applied) this.legacyCartImages(data.items);
-        }
-
-        // Legacy /cart replacement: pairs cart items with image containers by index
-        // and replaces the container content. Kept as a fallback for themes whose
-        // markup the row-based engine can't identify.
-        legacyCartImages(items) {
-            var imageSelector = '.line-item__image-wrapper > .aspect-ratio, .cart-line-image,.product_image,.cart_image,.product-image,.cpro_item_inner,.cart__image,.cart-image,.cart-item .image,.cart-item__image-container,.cart_page_image,.tt-cart__product_image,.CartItem__ImageWrapper,div.description.cf > a,.product-img, .cart-item-wrapper>.cart-item-block-left .cart-item-image img, .order-summary__body>tr>td>.line-item>.line-item__media-wrapper, .image-wrap>image-element>.image-element, .cart-item__media',
+            var string,
+                imageSelector = '.line-item__image-wrapper > .aspect-ratio, .cart-line-image,.product_image,.cart_image,.product-image,.cpro_item_inner,.cart__image,.cart-image,.cart-item .image,.cart-item__image-container,.cart_page_image,.tt-cart__product_image,.CartItem__ImageWrapper,div.description.cf > a,.product-img, .cart-item-wrapper>.cart-item-block-left .cart-item-image img, .order-summary__body>tr>td>.line-item>.line-item__media-wrapper, .image-wrap>image-element>.image-element, .cart-item__media',
                 images = document.querySelectorAll(imageSelector);
-
-            items.forEach((item, index) => {
+            
+            data.items.forEach((item, index) => {
                 if (item?.properties?.['_printapp']) {
                     const projectId = item.properties['_printapp'];
                     if (!/^[a-zA-Z0-9_-]+$/.test(projectId)) return;
@@ -371,239 +370,6 @@ if (typeof this.PrintAppShopify === 'undefined') {
                     }
                 }
             });
-        }
-
-        // Arm floating-cart preview support: a passive watcher for cart mutations
-        // plus an initial apply when a cart already exists. Idempotent; called
-        // from mountClient() (designs confirmed) or, gated, from init().
-        armDrawerPreviews() {
-            if (this._drawerArmed) return;
-            this._drawerArmed = true;
-
-            this.watchCartMutations();
-            const start = () => {
-                this.attachDrawerObservers();
-                if (/(?:^|;\s*)cart=/.test(document.cookie)) this.refreshDrawerPreviews();
-            };
-            if (document.readyState === 'loading') {
-                window.addEventListener('DOMContentLoaded', start);
-            } else start();
-        }
-
-        // Detect ajax cart mutations via PerformanceObserver resource timings —
-        // the browser records every fetch/XHR there, so no patching of globals
-        // and no risk of colliding with other scripts. Costs nothing until the
-        // theme actually talks to the cart API.
-        watchCartMutations() {
-            if (this._cartPerfObserver || typeof PerformanceObserver !== 'function') return;
-
-            const isCartMutation = (url) => {
-                try {
-                    const u = new URL(url, location.origin);
-                    // Locale prefixes are possible (/en-fr/cart/add.js) — match on the tail.
-                    if (/\/cart\/(add|change|update|clear)(\.js)?$/.test(u.pathname.replace(/\/+$/, ''))) return true;
-                    // Section Rendering API refresh of a cart section (how Dawn updates its drawer).
-                    const sections = u.searchParams.get('sections');
-                    return !!(sections && /cart/i.test(sections));
-                } catch { return false; }
-            };
-
-            try {
-                this._cartPerfObserver = new PerformanceObserver(list => {
-                    for (const entry of list.getEntries()) {
-                        if (entry.initiatorType !== 'fetch' && entry.initiatorType !== 'xmlhttprequest') continue;
-                        // responseStatus isn't exposed in every browser; when it is, skip failures.
-                        if (entry.responseStatus && (entry.responseStatus < 200 || entry.responseStatus >= 300)) continue;
-                        if (isCartMutation(entry.name)) return this.scheduleDrawerRefresh();
-                    }
-                });
-                // buffered:true also catches cart requests that finished before we armed.
-                this._cartPerfObserver.observe({ type: 'resource', buffered: true });
-            } catch (e) { console.error(e); }
-        }
-
-        // Debounce bursts of cart requests into one /cart.js fetch.
-        scheduleDrawerRefresh() {
-            clearTimeout(this._drawerDebounce);
-            this._drawerDebounce = setTimeout(() => this.refreshDrawerPreviews(), 200);
-        }
-
-        async refreshDrawerPreviews() {
-            if (this.model.designData?.settings?.disableCartDrawerPreviews) return;
-
-            const cart = await fetch('/cart.js').then(d => d.json()).catch(() => null);
-            if (cart?.items) this._cartData = cart;
-            if (!cart?.items?.some(item => item?.properties?.['_printapp'])) return;
-
-            // The theme renders the drawer some time after the cart request resolves;
-            // bounded retries absorb that latency (the swap is idempotent, so
-            // re-running against an already-updated drawer is a no-op).
-            if (this._drawerApplyTimers) this._drawerApplyTimers.forEach(clearTimeout);
-            const run = () => {
-                try {
-                    this.applyDrawerPreviews(cart.items);
-                    // Drawer roots can be injected late (app embeds) — (re)attach then.
-                    this.attachDrawerObservers();
-                } catch (e) { console.error(e); }
-            };
-            run();
-            this._drawerApplyTimers = [300, 900, 2000].map(ms => setTimeout(run, ms));
-        }
-
-        // Some drawer apps (e.g. AOV) rebuild their line items from a template every
-        // time the drawer opens — with no cart request to key off. Observe each
-        // drawer ROOT (scoped — never document/body) for structural changes and
-        // re-apply from the cached cart. Our swaps only touch img attributes, so
-        // childList mutations can't self-trigger.
-        attachDrawerObservers() {
-            const settings = this.model.designData?.settings || {};
-            const drawerSelector = settings.cartDrawerSelector || window.PrintAppShopify.SELECTORS.cartDrawer;
-
-            let roots;
-            try { roots = document.querySelectorAll(drawerSelector); } catch (e) { return console.error(e); }
-
-            this._observedDrawerRoots ??= new WeakSet();
-            roots.forEach(root => {
-                if (this._observedDrawerRoots.has(root)) return;
-                this._observedDrawerRoots.add(root);
-                new MutationObserver(() => this.applyDrawerFromCache())
-                    .observe(root, { childList: true, subtree: true });
-            });
-        }
-
-        // Debounced re-apply from the last known cart — no network. A circuit
-        // breaker backs off if a drawer app keeps fighting the swap.
-        applyDrawerFromCache() {
-            clearTimeout(this._drawerCacheDebounce);
-            this._drawerCacheDebounce = setTimeout(() => {
-                if (this.model.designData?.settings?.disableCartDrawerPreviews) return;
-                const items = this._cartData?.items;
-                if (!items?.some(item => item?.properties?.['_printapp'])) return;
-
-                const now = Date.now();
-                if (!this._applyWindowStart || now - this._applyWindowStart > 30e3) {
-                    this._applyWindowStart = now;
-                    this._applyCount = 0;
-                }
-                if (++this._applyCount > 20) return;
-
-                try { this.applyDrawerPreviews(items); } catch (e) { console.error(e); }
-            }, 150);
-        }
-
-        applyDrawerPreviews(items) {
-            const settings = this.model.designData?.settings || {};
-            const drawerSelector = settings.cartDrawerSelector || window.PrintAppShopify.SELECTORS.cartDrawer;
-
-            let roots;
-            try { roots = Array.from(document.querySelectorAll(drawerSelector)); } catch (e) { return console.error(e); }
-            // The main cart page uses the same line-item engine — treat it as a root
-            // so re-renders (quantity changes etc.) get previews re-applied too.
-            if (this.model.cartPage) roots.push(document);
-
-            let applied = 0;
-            roots.forEach(root => applied += this.applyPreviewsInRoot(root, items));
-            return applied;
-        }
-
-        // Apply previews to every recognizable line-item row inside one root.
-        // Returns how many customized rows now show their project preview.
-        applyPreviewsInRoot(root, items) {
-            const settings = this.model.designData?.settings || {};
-            const rowSelector = settings.drawerLineItemSelector || window.PrintAppShopify.SELECTORS.drawerLineItem;
-
-            let all;
-            try { all = Array.from(root.querySelectorAll(rowSelector)); } catch (e) { console.error(e); return 0; }
-            // Keep only outermost matches — the selector list can hit both a row
-            // and one of its descendants.
-            const rows = all.filter(el => !all.some(other => other !== el && other.contains(el)));
-            if (!rows.length) return 0;
-
-            let applied = 0;
-            const usedByVariant = {};
-            rows.forEach((row, index) => {
-                const item = this.resolveDrawerItem(row, index, rows, items, usedByVariant);
-                if (!item) {
-                    if (!this._drawerMatchWarned && rows.length !== items.length) {
-                        this._drawerMatchWarned = true;
-                        console.warn('PrintApp: could not match a cart line-item row to a cart item; skipping preview for it');
-                    }
-                    return;
-                }
-                if (this.setDrawerPreviewImage(row, item)) applied++;
-            });
-            return applied;
-        }
-
-        // Identify which cart item a drawer row represents: line-item key first,
-        // then variant id, then plain index — but index only when the counts line
-        // up, so a preview can never land on the wrong product.
-        resolveDrawerItem(row, index, rows, items, usedByVariant) {
-            const keyEl = row.matches('[data-line-item-key],[data-cart-item-key],[data-key]')
-                ? row : row.querySelector('[data-line-item-key],[data-cart-item-key],[data-key]');
-            const key = keyEl?.dataset?.lineItemKey || keyEl?.dataset?.cartItemKey || keyEl?.dataset?.key;
-            if (key) return items.find(item => item.key === key);
-
-            const changeLink = row.querySelector('a[href*="/cart/change"]');
-            if (changeLink) {
-                try {
-                    const id = new URL(changeLink.getAttribute('href'), location.origin).searchParams.get('id');
-                    if (id?.includes(':')) return items.find(item => item.key === id);
-                } catch (_) {}
-            }
-
-            let variantId;
-            const varEl = row.matches('[data-variant-id]') ? row : row.querySelector('[data-variant-id]');
-            if (varEl?.dataset?.variantId) variantId = varEl.dataset.variantId;
-            if (!variantId) {
-                const varLink = row.querySelector('a[href*="variant="]');
-                if (varLink) {
-                    try {
-                        variantId = new URL(varLink.getAttribute('href'), location.origin).searchParams.get('variant');
-                    } catch (_) {}
-                }
-            }
-            if (variantId) {
-                // Same variant can appear on several lines (different customizations);
-                // pair rows and items in document order.
-                const matches = items.filter(item => String(item.variant_id) === String(variantId));
-                const seen = usedByVariant[variantId] || 0;
-                usedByVariant[variantId] = seen + 1;
-                return matches[seen];
-            }
-
-            if (rows.length === items.length) return items[index];
-            return null;
-        }
-
-        // Non-destructive swap: keep the theme's own <img> (layout, links, aspect
-        // ratio), just point it at the project preview. Idempotent via data attrs.
-        setDrawerPreviewImage(row, item) {
-            const projectId = item?.properties?.['_printapp'];
-            if (!projectId || !/^[a-zA-Z0-9_-]+$/.test(projectId)) return false;
-
-            const img = row.querySelector('img');
-            if (!img) return false;
-
-            const url = `${window.PrintAppShopify.ENDPOINTS.runCdn}preview/${encodeURIComponent(projectId)}`;
-            // Drawer apps can rewrite src after our swap (hydration/CDN normalization),
-            // so "already applied" must check the live src, not just our marker —
-            // otherwise the retries skip and the overwrite wins.
-            if (img.dataset.paProject === projectId && img.getAttribute('src') === url) return true;
-
-            if (!img.dataset.paOrigSrc) img.dataset.paOrigSrc = img.getAttribute('src') || '';
-            img.dataset.paProject = projectId;
-            img.onerror = () => {
-                // Preview not generated (yet) — fall back to the original image and
-                // let a later retry attempt the swap again.
-                img.onerror = null;
-                delete img.dataset.paProject;
-                if (img.dataset.paOrigSrc) img.src = img.dataset.paOrigSrc;
-            };
-            img.removeAttribute('srcset');
-            img.removeAttribute('sizes');
-            img.src = url;
-            return true;
         }
 
         static async loadTag(url) {
@@ -638,6 +404,84 @@ if (typeof this.PrintAppShopify === 'undefined') {
             } catch (e) { console.error(e) }
         }
 
+        static trackAddToCart() {
+            // Use Symbols to avoid collisions and support idempotency
+            const SYM = {
+                patchedFetch: Symbol.for('shopifyCartWatcher.patchedFetch'),
+                patchedXHR: Symbol.for('shopifyCartWatcher.patchedXHR'),
+            };
+
+            const isCartAdd = (url) => {
+                try {
+                    const u = new URL(typeof url === 'string' ? url : url.url, location.origin);
+                    // normalize trailing slash
+                    return u.pathname.replace(/\/+$/, '') === '/cart/add.js';
+                } catch {
+                    return typeof url === 'string' && url.includes('/cart/add.js');
+                }
+            };
+
+            const fire = () => {
+                try {
+                    document.dispatchEvent(new CustomEvent('shopify:item-added'));
+                } catch (_) {}
+            };
+
+            // ---- fetch ----
+            if (!window[SYM.patchedFetch]) {
+                const _fetch = window.fetch;
+                window.fetch = async function(input, init) {
+                const res = await _fetch.apply(this, arguments);
+                try {
+                    const url = typeof input === 'string' ? input : input && input.url;
+                    if (isCartAdd(url) && res && res.ok) fire();
+                } catch (_) {}
+                    return res;
+                };
+                Object.defineProperty(window, SYM.patchedFetch, { value: true });
+            }
+
+            // ---- XHR ----
+            if (!XMLHttpRequest[SYM.patchedXHR]) {
+                const open = XMLHttpRequest.prototype.open;
+                const send = XMLHttpRequest.prototype.send;
+
+                XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                this.__shopifyCartURL = url;
+                return open.call(this, method, url, ...rest);
+                };
+
+                XMLHttpRequest.prototype.send = function(body) {
+                try {
+                    this.addEventListener('loadend', () => {
+                    try {
+                        if (isCartAdd(this.__shopifyCartURL) && this.status >= 200 && this.status < 300) {
+                        fire();
+                        }
+                    } catch (_) {}
+                    });
+                } catch (_) {}
+                    return send.call(this, body);
+                };
+
+                Object.defineProperty(XMLHttpRequest, SYM.patchedXHR, { value: true });
+            }
+
+            // (Optional best-effort) Non-AJAX form submits. Fires *before* navigation.
+            document.addEventListener('submit', (e) => {
+                try {
+                    const form = e.target;
+                    if (!(form instanceof HTMLFormElement)) return;
+                    const action = form.getAttribute('action') || '';
+                    if (action.startsWith('/cart/add')) {
+                        // Best effort; may navigate away immediately
+                        // Comment out if you strictly want only confirmed 2xx adds.
+                        document.dispatchEvent(new CustomEvent('shopify:item-added:attempt'));
+                    }
+                } catch (_) {}
+            }, true);
+        }
+        
         static queryPrioritySelector(selectors, visible) {
             const list = (typeof selectors === 'string') ? selectors.split(',') : selectors;
             let firstAvailable = null; // Store the first available element if no visible elements are found

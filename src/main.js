@@ -90,6 +90,11 @@
 				if (this.model.env.noInstance) this.managePage();
 				else if (this.model.env.renderUserProjects) this.renderUserProjects();
 				else this.createUi();
+
+				//	Product pages that also run Print Options: bind to the widget
+				//	instead of the theme's markup. Resolves to nothing elsewhere.
+				this.options = new global.PrintAppClient.OptionsBridge(this);
+				this.options.start();
 			}
 			
 			renderUserProjects() {}		// to be overridden in wordpress.js
@@ -323,12 +328,37 @@
 				}
 			}
 			
-			showApp(event) {
-				this.fire('app:before:show');
+			/**
+			 * Stop the page scrolling behind the editor, remembering what to
+			 * put back.
+			 *
+			 * Guarded: a second showApp without a close in between must NOT
+			 * re-capture, or it stores the locked values as the "originals"
+			 * and the page can never be unlocked again. That is reachable from
+			 * a double click, or from two scripts both driving the app.
+			 */
+			lockScroll() {
+				if (this.model.act.bodyStyles) return;
 				this.model.act.bodyStyles = {
 					overflow: document.body.style.overflow,
-					position: document.body.style.position
+					position: document.body.style.position,
+					html: document.documentElement.style.overflow
 				};
+			}
+
+			/** Put the page back exactly as it was. Safe to call twice. */
+			unlockScroll() {
+				const saved = this.model.act.bodyStyles;
+				if (!saved) return;
+				document.body.style.overflow = saved.overflow;
+				document.body.style.position = saved.position;
+				document.documentElement.style.overflow = saved.html ?? '';
+				this.model.act.bodyStyles = null;
+			}
+
+			showApp(event) {
+				this.fire('app:before:show');
+				this.lockScroll();
 
 				document.body.style.position = 'relative';
 				this.model.ui.frame.classList.add('printapp-shown');
@@ -358,6 +388,7 @@
 					designId: event?.designId,
 				});
 				this.setCommandPref();
+				this.options?.onEditorOpened();
 
 				this.fire('app:after:show');
 			}
@@ -378,18 +409,19 @@
 			}
 			destroyApp() {
 				this.fire('app:before:destroy');
+				//	Taking the iframe away is not the same as closing it: without
+				//	these two the page keeps a scroll lock it can never shed, and
+				//	the widget keeps listening to a client that no longer exists.
+				this.unlockScroll();
+				this.options?.dispose();
 				this.model.ui.frame.remove();
 				this.fire('app:after:destroy');
 			}
 			closeApp() {
 				this.fire('app:before:close');
-				
+
 				this.model.ui.frame.classList.remove('printapp-shown');
-				if (this.model.act.bodyStyles) {
-					document.body.style.overflow = this.model.act.bodyStyles.overflow;
-					document.body.style.position = this.model.act.bodyStyles.position;
-				}
-				document.documentElement.style.overflow = '';
+				this.unlockScroll();
 				switch (this.model.env.settings.displayMode) {
 					case 'mini':
 					case 'inline':
@@ -412,6 +444,7 @@
 			clearDesign() {
 				this.model.state.mode = 'new-project';
 				this.setCommandPref();
+				this.options?.onDesignCleared();
 				this.fire('app:project:reset', { projectId: this.model.session.projectId });
 			}
 			updatePreviews() {
@@ -486,12 +519,14 @@
 							this.setCommandPref();
 							this.updatePreviews();
 							this.handleCartBtn();
+							this.options?.onDesignSaved();
 						break;
 						case 'app:closed':
 							this.model.state.closed = true;
 							this.fire(message.event, message.data, true);
 							this.closeApp();
 							this.setCommandPref();
+							this.options?.onEditorClosed();
 						break;
 						case 'app:validation:success':
 							this.model.settings = message.data.settings;
@@ -520,6 +555,11 @@
 
 			updateElement(data) {
 				if (!data?.selector) return;
+				//	Print Options fields live in a shadow root and are owned by Vue:
+				//	they take a value through the widget's API, never through the DOM.
+				if (global.PrintAppClient.OptionsBridge.targets(data.selector))
+					return this.options?.update(data);
+
 				const element = document.querySelector(data.selector);
 				if (!element) return;
 
@@ -557,6 +597,11 @@
 
 			hookElement(data) {
 				if (!data?.selector) return;
+				//	Same reason as updateElement: the widget is subscribed to by
+				//	event, not by walking the DOM for a select/input/fieldset.
+				if (global.PrintAppClient.OptionsBridge.targets(data.selector))
+					return this.options?.hook(data);
+
 				let element;
 				try {
 					element = document.querySelector(data.selector);
@@ -616,6 +661,10 @@
 				if (this.model.ui.base) {
 					this.model.ui.base.innerHTML = typeof data === 'string' ? data : '';
 				}
+				//	Same as destroyApp: the frame is going, so the page must get
+				//	its scrolling back and the widget must stop listening to us.
+				this.unlockScroll();
+				this.options?.dispose();
 				if (this.model.ui.frame && this.model.ui.frame.parentNode) {
 					this.model.ui.frame.parentNode.removeChild(this.model.ui.frame);
 				}
@@ -820,6 +869,500 @@
 				document?.head?.appendChild?.(tag);
 			}
 		}
+
+		/* ------------------------------------------------------------------ */
+		/* Print Options bridge                                                */
+		/* ------------------------------------------------------------------ */
+
+		/**
+		 * Talks to the <print-configurator> widget when one is on the product
+		 * page (docs/printapp-integration-v1.md in the product-options repo).
+		 *
+		 * The widget renders into a SHADOW ROOT, so the selector transport
+		 * this client uses for themes cannot reach it: querySelector cannot
+		 * see inside, there are no select/input/fieldset elements to find,
+		 * and setting .value would not move Vue's state anyway. It exposes a
+		 * versioned API on the element instead, and this class is the only
+		 * place that speaks it.
+		 *
+		 * Everything degrades to nothing: no widget on the page means no
+		 * bridge, and every existing selector-based connector keeps working
+		 * exactly as before.
+		 */
+		global.PrintAppClient.OptionsBridge = class {
+			static ELEMENT = 'print-configurator';
+			/** Echo tag AND producer id AND the file record's `source`. */
+			static SOURCE = 'printapp';
+			static PREFIX = 'po:';
+			/** Field types that are their own role (see the widget's field()). */
+			static IMPLICIT_ROLES = ['quantity', 'dimensions', 'file'];
+			/**
+			 * Every unit the editor can report, in millimetres.
+			 *
+			 * `cUnit` is the design's own unit and falls back to "px", so px is
+			 * not an edge case — it is the default for a design that never set
+			 * one. px and pt assume the editor's configured 96 dpi.
+			 */
+			static UNITS_IN_MM = { mm: 1, cm: 10, in: 25.4, ft: 304.8, pt: 25.4 / 72, px: 25.4 / 96 };
+			/** How long to wait for a widget that renders after we boot. */
+			static DISCOVERY_MS = 10000;
+
+			el = null;
+			ready = false;
+			/** connectorId -> { selector, target, callbackEvent, callbackData } */
+			bound = new Map();
+			/** Registrations that arrived before the widget was ready. */
+			pending = [];
+			/** Kept so dispose() can take them off the widget again. */
+			listeners = [];
+
+			constructor(client) {
+				this.client = client;
+			}
+
+			get lang() {
+				return this.client?.model?.env?.language || {};
+			}
+
+			/** This product has a design to offer — otherwise: no button. */
+			get hasDesign() {
+				const env = this.client?.model?.env || {};
+				return Boolean(env.designId || env.designList?.length);
+			}
+
+			async start() {
+				if (!window.customElements) return false;
+				const el = await this.find();
+				if (!el) return false;
+
+				this.el = el;
+				try {
+					await window.customElements.whenDefined(global.PrintAppClient.OptionsBridge.ELEMENT);
+				} catch (e) { return false; }
+
+				//	`state` is non-null once the blueprint is parsed; before that we
+				//	must wait for `ready` or every read comes back empty.
+				if (el.state) this.onReady();
+				else el.addEventListener('ready', () => this.onReady(), { once: true });
+				return true;
+			}
+
+			/**
+			 * The widget's own script may add the element after ours runs, so a
+			 * single querySelector is not enough — watch briefly, then give up.
+			 */
+			find() {
+				const name = global.PrintAppClient.OptionsBridge.ELEMENT;
+				return new Promise(resolve => {
+					const hit = () => document.querySelector(name);
+					if (hit()) return resolve(hit());
+					if (!window.MutationObserver) return resolve(null);
+
+					const observer = new window.MutationObserver(() => {
+						const found = hit();
+						if (!found) return;
+						observer.disconnect();
+						clearTimeout(timer);
+						resolve(found);
+					});
+					observer.observe(document.documentElement, { childList: true, subtree: true });
+					const timer = setTimeout(() => {
+						observer.disconnect();
+						resolve(null);
+					}, global.PrintAppClient.OptionsBridge.DISCOVERY_MS);
+				});
+			}
+
+			onReady() {
+				if (this.ready) return;
+				this.ready = true;
+				const Bridge = global.PrintAppClient.OptionsBridge;
+
+				if (this.hasDesign && typeof this.el.registerProducer === 'function') {
+					this.el.registerProducer(Bridge.SOURCE, {
+						label: this.lang.customize || 'Personalise Design',
+						description: this.lang.customize_hint || undefined
+					});
+					//	The widget only reports the customer's intent — opening the
+					//	editor is ours to do.
+					this.listen('producer', event => {
+						if (event?.detail?.producer === Bridge.SOURCE) this.client.showApp();
+					});
+				}
+
+				//	One listener for every inbound connector: the widget emits a
+				//	single `change` per state transition, tagged with its cause.
+				this.listen('change', event => this.onWidgetChange(event));
+
+				//	A design restored from the session (returning customer, or a
+				//	cart edit) must price correctly before anyone touches anything.
+				if (this.client?.model?.state?.mode === 'edit-project') this.publishDesign();
+
+				this.applyForceCustomization();
+
+				const queued = this.pending.splice(0);
+				queued.forEach(data => this.hook(data));
+			}
+
+			/** Subscribe to the widget, remembering how to unsubscribe. */
+			listen(type, handler) {
+				this.el.addEventListener(type, handler);
+				this.listeners.push([type, handler]);
+			}
+
+			/**
+			 * Let go of the widget completely.
+			 *
+			 * A destroyed client that is still listening is not harmless: it
+			 * would re-open its own editor on the next `producer` click, and
+			 * each of those opens grabs the page's scroll lock. One page that
+			 * swaps products — a demo, a quick-view modal, a SPA storefront —
+			 * accumulates one such ghost per swap.
+			 */
+			dispose() {
+				for (const [type, handler] of this.listeners) {
+					this.el?.removeEventListener(type, handler);
+				}
+				this.listeners = [];
+				this.release();
+				this.el?.unregisterProducer?.(global.PrintAppClient.OptionsBridge.SOURCE);
+				this.bound.clear();
+				this.pending = [];
+				this.ready = false;
+				this.el = null;
+			}
+
+			/* -------------------------------------------------------------- */
+			/* Artwork slot                                                    */
+			/* -------------------------------------------------------------- */
+
+			/**
+			 * Hand the finished design to the widget's artwork slot — the same
+			 * slot an uploaded print file fills, because a job has one artwork
+			 * and the customer either uploads or designs.
+			 *
+			 * This is the whole pricing integration: page count and canvas feed
+			 * per-page and per-area rules with no arithmetic on our side.
+			 */
+			publishDesign() {
+				if (!this.el || typeof this.el.setFile !== 'function') return;
+				const Bridge = global.PrintAppClient.OptionsBridge;
+				const session = this.client?.model?.session || {};
+				const fileId = session.projectId || session.designId;
+				if (!fileId) return;
+
+				const record = {
+					fileId,
+					source: Bridge.SOURCE,
+					fileName: this.lang.your_design || 'Your design'
+				};
+
+				//	One preview per page, so the preview count IS the page count.
+				//	(Artwork mode reports it outright.)
+				const pages = session.pageCount ?? session.previews?.length;
+				if (Number.isFinite(pages) && pages > 0) record.pages = pages;
+
+				//	Canvas size only exists here when a width/height connector has
+				//	streamed it to us; the save payload does not carry one.
+				if (this.canvas?.w && this.canvas?.h) {
+					record.canvas = { w: this.canvas.w, h: this.canvas.h, unit: this.canvas.unit || 'mm' };
+				}
+
+				//	Provider extras live under `raw` — unknown top-level keys are
+				//	stripped by the widget's FileMetadata contract.
+				const previewUrl = session.previews?.[0]?.url;
+				if (previewUrl) record.raw = { previewUrl, projectId: session.projectId };
+
+				this.el.setFile(record, { source: Bridge.SOURCE });
+			}
+
+			clearDesign() {
+				if (typeof this.el?.setFile !== 'function') return;
+				this.el.setFile(null, { source: global.PrintAppClient.OptionsBridge.SOURCE });
+			}
+
+			hold(message) {
+				const Bridge = global.PrintAppClient.OptionsBridge;
+				this.el?.addHold?.(Bridge.SOURCE, { message, source: Bridge.SOURCE });
+			}
+
+			release() {
+				const Bridge = global.PrintAppClient.OptionsBridge;
+				this.el?.releaseHold?.(Bridge.SOURCE, { source: Bridge.SOURCE });
+			}
+
+			/**
+			 * forceCustomization, expressed as a hold instead of hiding a button.
+			 *
+			 * The widget owns add-to-cart wherever it renders, and its own loader
+			 * has already hidden the theme's button — so the DOM trick in
+			 * handleCartBtn has nothing left to hide. A named hold gates the real
+			 * CTA and composes with anyone else's (Filecheck's, say).
+			 */
+			applyForceCustomization() {
+				if (!this.ready || !this.client?.model?.env?.settings?.forceCustomization) return;
+				if (!this.hasDesign) return;
+
+				if (this.client.model.state.mode === 'new-project') {
+					this.hold(this.lang.customize_required || this.lang.customize || 'Personalise your design to continue');
+				} else {
+					this.release();
+				}
+			}
+
+			/* Lifecycle hooks, called by the client ------------------------- */
+
+			onEditorOpened() {
+				if (!this.ready) return;
+				this.hold(this.lang.finish_design || 'Finish your design');
+			}
+
+			onDesignSaved() {
+				if (!this.ready) return;
+				this.publishDesign();
+				this.release();
+				this.applyForceCustomization();
+			}
+
+			onEditorClosed() {
+				if (!this.ready) return;
+				this.release();
+				//	Closing without saving leaves forceCustomization to re-assert.
+				this.applyForceCustomization();
+			}
+
+			onDesignCleared() {
+				if (!this.ready) return;
+				this.clearDesign();
+				this.applyForceCustomization();
+			}
+
+			/* -------------------------------------------------------------- */
+			/* Connectors                                                      */
+			/* -------------------------------------------------------------- */
+
+			/** Does this connector target the widget rather than the theme? */
+			static targets(selector) {
+				return typeof selector === 'string' &&
+						selector.indexOf(global.PrintAppClient.OptionsBridge.PREFIX) === 0;
+			}
+
+			/**
+			 * Parse a widget target.
+			 *
+			 *   po:role/size        the field the merchant means by "size"
+			 *   po:field/stock_id   an exact field id
+			 *   po:quantity         shorthand (quantity | dimensions | file)
+			 *   po:dimensions.w     one component of a dimensions field
+			 *
+			 * Roles exist because merchants name fields freely; addressing by
+			 * role is what makes one connector work across every store.
+			 */
+			parse(selector) {
+				const Bridge = global.PrintAppClient.OptionsBridge;
+				let raw = selector.slice(Bridge.PREFIX.length),
+					axis = null;
+
+				const dot = raw.lastIndexOf('.');
+				if (dot > -1 && ['w', 'h'].includes(raw.slice(dot + 1))) {
+					axis = raw.slice(dot + 1);
+					raw = raw.slice(0, dot);
+				}
+
+				const slash = raw.indexOf('/');
+				return {
+					kind: slash < 0 ? '' : raw.slice(0, slash),
+					key: slash < 0 ? raw : raw.slice(slash + 1),
+					axis
+				};
+			}
+
+			fields() {
+				const schema = this.el?.schema;
+				if (!schema?.sections) return [];
+				return schema.sections.reduce((all, section) => all.concat(section.fields || []), []);
+			}
+
+			resolve(selector) {
+				const Bridge = global.PrintAppClient.OptionsBridge;
+				const { kind, key, axis } = this.parse(selector);
+				const list = this.fields();
+				let field = null;
+
+				if (kind === 'field') {
+					field = list.find(f => f.id === key) || null;
+				} else if (kind === 'role') {
+					//	Role only — never fall through to an id, or a merchant who
+					//	happens to name a field "size" silently steals the binding.
+					field = list.find(f => f.role === key) ||
+							list.find(f => Bridge.IMPLICIT_ROLES.includes(key) && f.type === key) ||
+							null;
+				} else {
+					field = this.el?.field?.(key) || null;
+				}
+				return field ? { field, axis } : null;
+			}
+
+			/* Reading ------------------------------------------------------- */
+
+			/** The widget's answer for a field, in the envelope the editor expects. */
+			read(field, axis) {
+				const value = this.el?.state?.selections?.[field.id];
+
+				if (field.type === 'dimensions') {
+					const dims = value && typeof value === 'object' ? value : {};
+					return {
+						value: axis ? dims[axis] : dims,
+						unit: dims.unit,
+						type: field.type
+					};
+				}
+
+				if (Array.isArray(field.options)) {
+					const selected = Array.isArray(value) ? value : [value];
+					const index = field.options.findIndex(option => option.id === selected[0]);
+					return {
+						value: Array.isArray(value) ? value.join(',') : (value ?? ''),
+						text: field.options[index]?.label,
+						values: field.options.map(option => ({
+							value: option.id,
+							text: option.label,
+							title: option.label,
+							selected: selected.includes(option.id)
+						})),
+						selectedIndex: index,
+						type: field.type
+					};
+				}
+
+				return { value: value ?? '', type: field.type };
+			}
+
+			/**
+			 * Register a connector against the widget. Called from hookElement,
+			 * and queued if the blueprint has not finished loading.
+			 */
+			hook(data) {
+				if (!this.ready) {
+					this.pending.push(data);
+					return;
+				}
+				const found = this.resolve(data.selector);
+				if (!found) return;	//	merchant removed the field: stay quiet
+
+				const id = data.callbackData?.connectorId || data.selector;
+				this.bound.set(id, {
+					selector: data.selector,
+					fieldId: found.field.id,
+					axis: found.axis,
+					callbackEvent: data.callbackEvent,
+					callbackData: data.callbackData
+				});
+				this.send(this.bound.get(id), 'init');
+			}
+
+			send(entry, eventType) {
+				const found = this.resolve(entry.selector);
+				if (!found) return;
+				this.client.sendMsg(entry.callbackEvent, {
+					selector: entry.selector,
+					...this.read(found.field, entry.axis),
+					event: eventType,
+					callbackData: entry.callbackData
+				});
+			}
+
+			/**
+			 * One widget event, fanned out to whichever connectors care.
+			 *
+			 * Echo suppression is exact here: the widget tags every event with
+			 * the source of the write that caused it, so our own writes are
+			 * identifiable without the timing guard the DOM path needs.
+			 */
+			onWidgetChange(event) {
+				const detail = event?.detail;
+				if (!detail || detail.source === global.PrintAppClient.OptionsBridge.SOURCE) return;
+
+				const changed = detail.changed || [];
+				this.bound.forEach(entry => {
+					if (!changed.includes(`selections.${entry.fieldId}`)) return;
+					this.send(entry, 'change');
+				});
+			}
+
+			/* Writing ------------------------------------------------------- */
+
+			static convert(value, from, to) {
+				const table = global.PrintAppClient.OptionsBridge.UNITS_IN_MM;
+				if (!from || !to || from === to || !table[from] || !table[to]) return value;
+				return Math.round((value * table[from] / table[to]) * 100) / 100;
+			}
+
+			/**
+			 * The editor changed something; put it into the widget as if the
+			 * customer had chosen it — same validation, same repricing path.
+			 */
+			update(data) {
+				if (!this.ready || typeof this.el?.setSelection !== 'function') return;
+				const Bridge = global.PrintAppClient.OptionsBridge;
+				const found = this.resolve(data.selector);
+				if (!found) return;
+
+				const { field, axis } = found;
+				const write = value => this.el.setSelection(field.id, value, { source: Bridge.SOURCE });
+
+				switch (field.type) {
+					case 'dimensions': {
+						const number = Number(data.value);
+						if (!Number.isFinite(number)) return;
+						const current = this.el.state?.selections?.[field.id] || {};
+						//	The editor speaks its own display unit. When it says so we
+						//	convert; when it does not, the value belongs to whatever
+						//	unit the customer is currently looking at.
+						const unit = current.unit || field.defaultUnit || 'mm';
+						const next = data.unit ? Bridge.convert(number, data.unit, unit) : number;
+						if (!axis) return;
+						write({ w: axis === 'w' ? next : current.w, h: axis === 'h' ? next : current.h, unit });
+						return;
+					}
+					case 'quantity':
+					case 'number': {
+						const number = Number(data.value);
+						if (Number.isFinite(number)) write(number);
+						return;
+					}
+					case 'text':
+						write(String(data.value ?? ''));
+						return;
+					case 'select-many': {
+						const list = Array.isArray(data.value)
+							? data.value
+							: String(data.value ?? '').split(',').map(v => v.trim()).filter(Boolean);
+						write(list.map(v => this.choiceId(field, v)).filter(Boolean));
+						return;
+					}
+					case 'select-one': {
+						const id = this.choiceId(field, data.value);
+						if (id) write(id);
+						return;
+					}
+					default:
+						//	file fields are answered by producers, never written to.
+						return;
+				}
+			}
+
+			/** Accept a choice id or its visible label — merchants map by both. */
+			choiceId(field, value) {
+				const wanted = String(value ?? '').trim();
+				if (!wanted) return null;
+				const options = field.options || [];
+				const byId = options.find(option => option.id === wanted);
+				if (byId) return byId.id;
+				const lower = wanted.toLowerCase();
+				return options.find(option => String(option.label ?? '').toLowerCase() === lower)?.id ?? null;
+			}
+		};
 	}
 
 })(typeof window !== 'undefined' ? window : global);
