@@ -435,6 +435,12 @@
 				this.model.state.shown = false;
 				this.setCommandPref();
 
+				//	Release the add-to-cart hold HERE, not in the app:closed
+				//	handler: closeApp() and close() are public, and a caller who
+				//	uses them directly would otherwise leave the widget's CTA
+				//	disabled with no way to re-enable it.
+				this.options?.onEditorClosed();
+
 				this.fire('app:after:close');
 			}
 			saved(value) {
@@ -524,9 +530,8 @@
 						case 'app:closed':
 							this.model.state.closed = true;
 							this.fire(message.event, message.data, true);
-							this.closeApp();
+							this.closeApp();	//	releases the hold for us
 							this.setCommandPref();
-							this.options?.onEditorClosed();
 						break;
 						case 'app:validation:success':
 							this.model.settings = message.data.settings;

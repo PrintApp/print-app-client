@@ -16,7 +16,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
         static SELECTORS = {
             previews: '.product__media-wrapper,.image,#product-photo-container,.product-left-column,.main-image,.product-photo-container,.featured,#image-block,.product-single-photos,.product_slider,#product-image,.photos,.product-single__photos,.image__container,.product-gallery',
             cartForm: '[data-type="add-to-cart-form"],[action="/cart/add"],[action="/cart/add.js"],#add-item-form,#add-to-cart-form,[action$="/cart/add"], #AddToCartForm',
-            cartDrawer: '#aov-cart-drawer,cart-drawer,cart-notification,#CartDrawer,.cart-drawer,#mini-cart,.mini-cart,.minicart,.drawer--cart,#sidebar-cart,.cart-popup,.ajaxcart,#slidecarthq,.upcart-cart-body',
+            cartDrawer: '#aov-cart-drawer,cart-drawer,cart-drawer-component,#cart-drawer,cart-notification,#CartDrawer,.cart-drawer,#mini-cart,.mini-cart,.minicart,.drawer--cart,#sidebar-cart,.cart-popup,.ajaxcart,#slidecarthq,.upcart-cart-body',
             drawerLineItem: '.cart-items__table-row,.AOV-CartDrawer-Item,[data-line-item-key],[data-cart-item-key],[data-cart-item],.cart-item,.cart__item,.cart-drawer-item,.mini-cart__item,.line-item,.ajaxcart__product',
         };
         model = { };

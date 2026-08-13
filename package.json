@@ -4,6 +4,10 @@
     "description": "",
     "main": "src/client.js",
     "scripts": {
+        "deploy": "node scripts/deploy.mjs",
+        "deploy:client": "node scripts/deploy.mjs client",
+        "deploy:all": "node scripts/deploy.mjs all",
+        "deploy:run-cache": "node scripts/deploy.mjs run-cache",
         "test": "echo \"Error: no test specified\" && exit 1"
     },
     "author": "",
@@ -11,11 +15,5 @@
     "devDependencies": {
         "autoprefixer": "^10.4.12",
         "tailwindcss": "^3.1.8"
-    },
-    "dependencies": {
-        "dotenv": "^16.5.0",
-        "gulp": "^4.0.2",
-        "gulp-cloudfront-invalidate": "^0.1.6",
-        "gulp-s3-upload": "^1.7.3"
     }
 }
