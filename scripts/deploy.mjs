@@ -51,6 +51,7 @@ const REVALIDATE = "no-cache";
 const TARGETS = {
     client: { file: "src/main.js", key: "js/client.js" },
     wp: { file: "src/frameworks/wordpress.js", key: "js/wp.js" },
+    odoo: { file: "src/frameworks/odoo.js", key: "js/odoo.js" },
     ps: { file: "src/frameworks/prestashop.js", key: "js/ps.js" },
     oc: { file: "src/frameworks/opencart.js", key: "js/oc.js" },
     bc: { file: "src/frameworks/bigcommerce.js", key: "js/bc.js" },
