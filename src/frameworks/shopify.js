@@ -290,13 +290,42 @@ if (typeof this.PrintAppShopify === 'undefined') {
             if (!cartButton) return;
 
             if (this._clearHandler) cartButton.removeEventListener('click', this._clearHandler);
-            this._clearHandler = () => {
-                setTimeout(() => {
-                    this.clearProject({ projectId: this.model.currentProjectId, keepInput: true });
-                }, 2e3);
-            };
+            // A click is only an *attempt*: option apps (required checkboxes etc.)
+            // can block the submit after the click fires. Clearing on the click
+            // alone wipes the customer's design and reloads the page with nothing
+            // added — so confirm the project actually landed in the cart first.
+            this._clearHandler = () => this.confirmAddThenClear();
             cartButton.addEventListener('click', this._clearHandler);
 	    }
+
+        async confirmAddThenClear() {
+            const projectId = this.model.currentProjectId
+                || document.getElementById('_printapp')?.value
+                || (window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY) || {})[this.model.productId]?.projectId;
+            if (!projectId) return;
+            if (this._confirmingAdd) return; // a confirmation loop is already polling
+            this._confirmingAdd = true;
+
+            const landed = async () => {
+                const cart = await fetch('/cart.js').then(d => d.json()).catch(() => null);
+                return !!cart?.items?.some(item => item?.properties?.['_printapp'] === projectId);
+            };
+
+            try {
+                // Poll at ~1.2s / 2.7s / 5.2s after the click; a blocked or failed
+                // add never confirms and the design is left untouched, so the
+                // customer can fix the validation and simply click again.
+                for (const wait of [1200, 1500, 2500]) {
+                    await new Promise(resolve => setTimeout(resolve, wait));
+                    if (await landed()) {
+                        this.clearProject({ projectId, keepInput: true });
+                        return;
+                    }
+                }
+            } finally {
+                this._confirmingAdd = false;
+            }
+        }
 
         doClientAccount() { }
 
