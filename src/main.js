@@ -112,9 +112,29 @@
 				this.runCustomScripts();
 				this.fire('ui:created');
 			}
+			/**
+			 * Which editor app the iframe loads: '' is the classic (fabric)
+			 * editor at the CDN root, 'pfx/' the printfx editor deployed
+			 * beside it. The tenant's `usePrintFxEditor` setting decides;
+			 * an explicit `engine` param ('pfx' | 'classic') overrides it,
+			 * so QA can force either without touching tenant settings.
+			 *
+			 * This routes by TENANT. Per-design correction is the editors'
+			 * own job: pfx dispatches unmigrated fabric designs back to
+			 * classic when the tenant is not flagged (engineDispatch), and
+			 * classic holds printfx-owned designs read-only
+			 * (engineGuardService). Both apps live on the same origin, so
+			 * frameDomain and every postMessage path stay exactly as-is.
+			 */
+			editorPath() {
+				const engine = this.model.env.engine;
+				if (engine === 'pfx' || engine === 'printfx') return 'pfx/';
+				if (engine === 'classic') return '';
+				return this.model.env.settings?.usePrintFxEditor ? 'pfx/' : '';
+			}
 			makeFrame() {
 				let frame = document.createElement('iframe');
-				frame.src = `${global.PrintAppClient.ENDPOINTS.cdnBase}index.html`;
+				frame.src = `${global.PrintAppClient.ENDPOINTS.cdnBase}${this.editorPath()}index.html`;
 				frame.title = 'Print.App';
 				frame.classList.add('printapp-frame');
 				return frame;
