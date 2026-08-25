@@ -107,12 +107,18 @@ if (typeof this.PrintAppShopify === 'undefined') {
             
             let store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
             let currentValue = store[this.model.productId] || {};
+            // 'reorder' entries come from the account page and point at an
+            // already-ordered project: it is only the SOURCE to duplicate from.
+            // Never prefill the cart input with it — the customer must open the
+            // editor, which saves a fresh project (and, in replacing this
+            // storage entry, clears the action flag).
+            const isReorder = currentValue.action === 'reorder';
             if (!document.getElementById('_printapp')) {
                 this.model.cartForm.insertAdjacentHTML('afterbegin', `
                     <input id="_printapp" name="properties[_printapp]" type="hidden" value="">
                     <input id="_printapp-pdf-download" name="properties[_printapp-pdf-download]" type="hidden" value="">
                 `);
-                this.setElementValue(currentValue.projectId || '');
+                this.setElementValue(isReorder ? '' : currentValue.projectId || '');
             }
 
             let designList = this.model.designData?.designs || [];
@@ -131,6 +137,11 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 framework: 'sp',
                 domainKey: `dom_sp_${this.model.storeId}`,
                 storeId: this.model.storeId,
+                // The whole env reaches the editor on handshake; a real id makes
+                // the editor stamp `author` on saved projects (the key the
+                // account page lists by). 'guest' is the WP-established
+                // convention for anonymous visitors.
+                userId: this.model.userData?.id ? `${this.model.userData.id}` : 'guest',
                 designList,
                 variants: this.model.designData?.variants,
                 artwork: this.model.designData?.artwork,
@@ -138,7 +149,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 language: this.model.designData?.language,
                 projectId: currentValue.projectId,
                 previews: currentValue.previews,
-                mode: currentValue.projectId ? 'edit-project' : 'new-project',
+                mode: isReorder ? 'new-project' : (currentValue.projectId ? 'edit-project' : 'new-project'),
                 commandSelector: '#pa-buttons',
                 previewsSelector: window.PrintAppShopify.SELECTORS.previews,
             });
@@ -148,7 +159,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
             this.model.instance.on('app:project:reset', data => this.clearProject(data));
 
             setTimeout(() => {
-                if (currentValue.projectId) this.setAddToCartAction();
+                if (currentValue.projectId && !isReorder) this.setAddToCartAction();
             }, 1e3);
 
             if (this.model.designData?.settings?.observeFormRerenders) {
@@ -274,6 +285,16 @@ if (typeof this.PrintAppShopify === 'undefined') {
             window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
             window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
 
+            // Save-for-later: nothing goes to the cart. The PROJECTSKEY entry
+            // written above is what the account page later claims for guests
+            // (the editor saved their project against the 'guest' userId).
+            if (data.saveForLater) {
+                window.location.href = this.model.userData?.id
+                    ? '/account'
+                    : `/account/register?return_url=${encodeURIComponent('/account')}`;
+                return;
+            }
+
             this.setAddToCartAction();
         }
         setElementValue(value) {
@@ -327,7 +348,121 @@ if (typeof this.PrintAppShopify === 'undefined') {
             }
         }
 
-        doClientAccount() { }
+        // Classic customer accounts: the app embed loads this script on /account
+        // too, so the saved-designs list needs no theme edits. Both requests go
+        // through the store's App Proxy (/apps/printapp/*) — Shopify signs them
+        // and attaches the logged-in customer id, which is the only identity
+        // the backend trusts.
+        async doClientAccount() {
+            if (!window.__st?.cid) return;
+
+            await this.claimGuestProjects();
+
+            const langCode = document.querySelector('html')?.getAttribute('lang') || 'en';
+            const data = await fetch(`/apps/printapp/projects?lang=${encodeURIComponent(langCode)}`)
+                            .then(d => d.ok ? d.json() : null)
+                            .catch(() => null);
+            if (!data?.projects?.length) return;
+
+            this.renderUserProjects(data);
+        }
+
+        // Guest saves exist server-side under the 'guest' userId; the only
+        // handle this browser has on them is the PROJECTSKEY localStorage map
+        // written at save time. Hand those ids to the backend for reassignment
+        // to the now-authenticated customer, and consume every id that got a
+        // verdict (claimed or unclaimable) so visits don't retry forever —
+        // a failed request leaves the map untouched for a retry next visit.
+        async claimGuestProjects() {
+            const projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
+            const projectIds = Object.keys(projects || {});
+            if (!projectIds.length) return;
+
+            const result = await fetch('/apps/printapp/claim', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ projectIds }),
+            }).then(d => d.ok ? d.json() : null).catch(() => null);
+            if (!result) return;
+
+            [...(result.claimed || []), ...(result.skipped || [])].forEach(id => delete projects[id]);
+            window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
+        }
+
+        async renderUserProjects(data) {
+            await window.PrintAppShopify.loadTag(`${window.PrintAppShopify.ENDPOINTS.baseCdn}js/petite-vue.js`);
+            await window.PrintAppShopify.loadTag(`${window.PrintAppShopify.ENDPOINTS.baseCdn}css/style.css`);
+            if (!window.PetiteVue) return;
+
+            this.model.userProjects = data.projects;
+
+            let base = document.getElementById('print-app-user-projects');
+            if (!base) {
+                const host = window.PrintAppShopify.queryPrioritySelector('#MainContent,main,.main-content,#main') || document.body;
+                host.insertAdjacentHTML('beforeend', '<div id="print-app-user-projects"></div>');
+                base = document.getElementById('print-app-user-projects');
+            }
+
+            const lang = data.language || {};
+            base.innerHTML = `
+                <div id="print-app-projects" class="printapp-projects" v-scope>
+                    <h1 class="printapp-projects-title">{{lang.my_saved_designs || 'My saved designs'}}</h1>
+                    <div v-for="project in projects" class="printapp-project">
+                        <div class="printapp-project-preview">
+                            <img :src="project.pages[0]?.thumbnail" :alt="project.product?.name" />
+                        </div>
+                        <div class="printapp-project-details">
+                            <div class="printapp-project-name">{{project.product?.name || project.product?.title}}</div>
+                            <div class="printapp-project-date">{{formatDate(project.modified || project.created)}}</div>
+                        </div>
+                        <div class="printapp-project-actions">
+                            <button @click.prevent.stop="resumeProject" :data-project-id="project.id" class="printapp-project-btn printapp-project-btn-duplicate">
+                                <span v-if="project.saveForLater">{{lang.user_resume_project || 'Resume Design'}}</span>
+                                <span v-else>{{lang.user_duplicate_project || 'Duplicate Design for Re-order'}}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+
+            const vue = window.PetiteVue.reactive({
+                lang,
+                projects: data.projects,
+                resumeProject: this.resumeAccountProject.bind(this),
+                formatDate: (timestamp) => {
+                    const date = new Date(timestamp);
+                    return date.toLocaleString(undefined, {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                }
+            });
+            window.PetiteVue.createApp(vue).mount('#print-app-user-projects');
+        }
+
+        // Same-origin handoff: stage the project in the per-product STORAGEKEY
+        // entry and bounce to the product page, where mountClient() picks it up.
+        // saveForLater projects resume in edit-project mode; ordered ones carry
+        // action:'reorder' so the editor duplicates and the original stays
+        // untouched (its id is what the merchant's order references).
+        resumeAccountProject(event) {
+            const   projectId = event?.target?.closest?.('[data-project-id]')?.dataset?.projectId || event?.target?.dataset?.projectId,
+                    project = (this.model.userProjects || []).find(p => p.id === projectId);
+
+            if (!project?.product?.id) return;
+
+            const store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
+            store[project.product.id] = {
+                projectId: project.id,
+                previews: (project.pages || []).map(page => ({ url: page.preview })),
+                action: project.saveForLater ? 'resume' : 'reorder',
+            };
+            window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
+
+            if (project.product.url) window.location.href = project.product.url;
+        }
 
         static initCustomModifications() {
             
