@@ -7,6 +7,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
         static VERSION = '0.1';
         static STORAGEKEY = 'print-app-sp';
         static PROJECTSKEY = 'print-app-sp-projects';
+        static CARTKEY = 'print-app-sp-cart';
         static ENDPOINTS = {
             baseCdn: 'https://editor.print.app/',
             runCdn: 'https://run.print.app/',
@@ -44,8 +45,15 @@ if (typeof this.PrintAppShopify === 'undefined') {
             // drawer watcher when this browser is known to hold Print.App projects
             // and a cart exists — product pages (re)arm in mountClient() once the
             // product's designs are confirmed.
+            // Two signals qualify: a saved project in localStorage, or the flag set
+            // when we last confirmed a customized item in the cart. The flag matters
+            // because clearProject() intentionally wipes the saved project right
+            // after a successful add — while the customized item is still in the
+            // cart and the drawer still needs its preview on every following page.
             const savedProjects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
-            if (Object.keys(savedProjects || {}).length && /(?:^|;\s*)cart=/.test(document.cookie)) {
+            const hasSignal = Object.keys(savedProjects || {}).length
+                || window.localStorage.getItem(window.PrintAppShopify.CARTKEY);
+            if (hasSignal && /(?:^|;\s*)cart=/.test(document.cookie)) {
                 this.armDrawerPreviews();
             }
 
@@ -343,6 +351,10 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 for (const wait of [1200, 1500, 2500]) {
                     await new Promise(resolve => setTimeout(resolve, wait));
                     if (await landed()) {
+                        // The cart now provably holds a customized item — remember
+                        // that before clearProject wipes the saved project, so
+                        // drawer previews keep arming on the following pages.
+                        window.PrintAppShopify.setCartFlag(true);
                         this.clearProject({ projectId, keepInput: true });
                         return;
                     }
@@ -495,12 +507,25 @@ if (typeof this.PrintAppShopify === 'undefined') {
             return r || {};
         }
 
+        // Remembers whether the cart held a customized item last time we looked,
+        // so pages without a saved project (e.g. right after clearProject) still
+        // know to arm drawer previews. Self-heals: cleared whenever a fetched
+        // cart has no customized items.
+        static setCartFlag(hasCustomized) {
+            try {
+                if (hasCustomized) window.localStorage.setItem(window.PrintAppShopify.CARTKEY, '1');
+                else window.localStorage.removeItem(window.PrintAppShopify.CARTKEY);
+            } catch (_) {}
+        }
+
         async setCartImages() {
             const data = await fetch('/cart.js')
                         .then(d => d.json()).catch(console.log);
             if (!data?.items) return;
             this._cartData = data;
-            if (!data.items.some(item => item?.properties?.['_printapp'])) return;
+            const hasCustomized = data.items.some(item => item?.properties?.['_printapp']);
+            window.PrintAppShopify.setCartFlag(hasCustomized);
+            if (!hasCustomized) return;
 
             // Identity-matched, non-destructive replacement — the same engine the
             // floating drawer uses. Only when it can't recognize any line-item row
@@ -600,7 +625,10 @@ if (typeof this.PrintAppShopify === 'undefined') {
             if (this.model.designData?.settings?.disableCartDrawerPreviews) return;
 
             const cart = await fetch('/cart.js').then(d => d.json()).catch(() => null);
-            if (cart?.items) this._cartData = cart;
+            if (cart?.items) {
+                this._cartData = cart;
+                window.PrintAppShopify.setCartFlag(cart.items.some(item => item?.properties?.['_printapp']));
+            }
             if (!cart?.items?.some(item => item?.properties?.['_printapp'])) return;
 
             // The theme renders the drawer some time after the cart request resolves;
