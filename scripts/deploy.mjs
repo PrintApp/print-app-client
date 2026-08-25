@@ -180,6 +180,16 @@ for (const name of names) {
 
 invalidate(DISTRIBUTION, [...paths]);
 
+// The run.print.app lambda EMBEDS client.js into every tenant's
+// storefront script (…/<domainKey>/<postId>/wp), and the edge caches
+// each of those for s-maxage=5184000 — sixty days. A client deploy
+// that skips this flush strands every storefront on the old client
+// until then (found live: the &r= preview fix took effect on the CDN
+// while wp.demo kept executing the stale cached copy).
+if (names.includes("client")) {
+    invalidate(RUN_DISTRIBUTION, ["/*"]);
+}
+
 let failed = false;
 console.log("");
 for (const [key, size] of expected) {

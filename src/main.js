@@ -483,8 +483,12 @@
 				const previewBase = document.querySelector(this.model?.env?.settings?.customPreviewSelector || this.model.env.previewsSelector);
 				if (!previewBase || !previews?.length) return;
 
+				// Cache-buster must be query-aware: pfx preview URLs are
+				// bare (…png) and appending `&r=` there makes the CDN key
+				// literally "…png&r=…" — a guaranteed miss. Classic URLs
+				// already carry a query string and keep using `&`.
 				if (this.model?.state?.mode === 'edit-project')
-					previews = previews.map(p => ({ ...p, url: `${p.url}&r=${Math.random()}` }));
+					previews = previews.map(p => ({ ...p, url: `${p.url}${String(p.url).includes('?') ? '&' : '?'}r=${Math.random()}` }));
 
 				previewBase.innerHTML =
 					`<div class="printapp-previews">
