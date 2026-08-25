@@ -288,10 +288,14 @@ if (typeof this.PrintAppShopify === 'undefined') {
             // Save-for-later: nothing goes to the cart. The PROJECTSKEY entry
             // written above is what the account page later claims for guests
             // (the editor saved their project against the 'guest' userId).
+            // Guests land on login, not register: every theme's login page
+            // links to account creation (the reverse isn't guaranteed), Shopify
+            // bounces already-authenticated visitors straight to /account, and
+            // new-customer-account stores fold login into their unified flow.
             if (data.saveForLater) {
                 window.location.href = this.model.userData?.id
                     ? '/account'
-                    : `/account/register?return_url=${encodeURIComponent('/account')}`;
+                    : `/account/login?return_url=${encodeURIComponent('/account')}`;
                 return;
             }
 
