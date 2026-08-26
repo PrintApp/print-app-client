@@ -33,6 +33,14 @@ if (typeof this.PrintAppShopify === 'undefined') {
             if (!this.model.hostname) return console.error('This script needs to be loaded via wire');
 
             if (this.model.accountPage) return this.doClientAccount();
+
+            // New-customer-accounts stores have no theme-rendered /account, so
+            // the account page can never claim this browser's guest saves —
+            // but any storefront page can, the moment a logged-in customer
+            // touches it. Fire-and-forget, throttled. (Classic accounts also
+            // claim in doClientAccount(), which simply finds nothing left.)
+            this.maybeClaimGuestProjects();
+
             if (this.model.cartPage) {
                 await this.setCartImages();
                 // The floating drawer can be opened on the cart page too — keep it in sync.
@@ -88,7 +96,13 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 this.model.cartForm.insertAdjacentHTML('afterbegin', paButtons);
 
             }
-            
+
+            // Cross-origin handoff from the customer-account UI extension
+            // (hosted accounts can't write this origin's localStorage): a
+            // ?pa_project=&pa_action= link seeds the same storage entry the
+            // classic account page writes, then mountClient() takes over.
+            this.applyUrlHandoff();
+
             const paData = await fetch(`${window.PrintAppShopify.ENDPOINTS.runCdn}dom_sp_${this.model.storeId}/${this.model.productId}/sp?lang=${this.model.langCode}`)
                                 .then(d => d.json()).catch(console.error);
 
@@ -138,7 +152,10 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 langCode: this.model.langCode,
                 product: {
                     id: this.model.productId,
-                    name: window.__st?.pageurl?.split('/').pop().split('-').join(' '),
+                    // Strip any query string first — arriving via theme search
+                    // appends ?_pos=…&_psq=… to pageurl, which otherwise ends
+                    // up inside the stored product name.
+                    name: window.__st?.pageurl?.split('/').pop().split('?')[0].split('-').join(' '),
                     title: this.model.title,
                     url: window.location.href
                 },
@@ -301,9 +318,16 @@ if (typeof this.PrintAppShopify === 'undefined') {
             // bounces already-authenticated visitors straight to /account, and
             // new-customer-account stores fold login into their unified flow.
             if (data.saveForLater) {
+                // Guests return to THIS product page after login — not the
+                // account. On the storefront the claim fires immediately on
+                // load (maybeClaimGuestProjects), so the design is attached
+                // to their fresh session before they go anywhere else. On
+                // hosted-accounts stores the account page can't claim at all,
+                // so returning there would show an empty list.
+                const returnTo = window.location.pathname + window.location.search;
                 window.location.href = this.model.userData?.id
                     ? '/account'
-                    : `/account/login?return_url=${encodeURIComponent('/account')}`;
+                    : `/account/login?return_url=${encodeURIComponent(returnTo)}`;
                 return;
             }
 
@@ -405,6 +429,47 @@ if (typeof this.PrintAppShopify === 'undefined') {
             window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
         }
 
+        // Throttled claim for ordinary storefront pages. The timestamp is
+        // written BEFORE the request so concurrent tabs don't stampede; a
+        // successful claim consumes the entries, so the throttle only ever
+        // delays retries after a failure.
+        async maybeClaimGuestProjects() {
+            if (!window.__st?.cid) return;
+            const projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
+            if (!Object.keys(projects || {}).length) return;
+
+            const CLAIMKEY = 'print-app-sp-claimed-at';
+            const last = Number(window.localStorage.getItem(CLAIMKEY) || 0);
+            if (Date.now() - last < 600e3) return;
+            window.localStorage.setItem(CLAIMKEY, `${Date.now()}`);
+
+            await this.claimGuestProjects().catch(console.log);
+        }
+
+        // ?pa_project=<id>&pa_action=resume|reorder — written by the
+        // customer-account UI extension's buttons. Seeds the per-product
+        // storage entry exactly like the classic account page does, then
+        // strips the params so refresh/share doesn't re-trigger.
+        applyUrlHandoff() {
+            let params;
+            try { params = new URLSearchParams(window.location.search); } catch { return; }
+
+            const projectId = params?.get('pa_project');
+            if (!projectId || !/^[a-zA-Z0-9_-]+$/.test(projectId)) return;
+            const action = params?.get('pa_action') === 'reorder' ? 'reorder' : 'resume';
+
+            const store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
+            store[this.model.productId] = { projectId, action };
+            window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
+
+            params?.delete?.('pa_project');
+            params?.delete?.('pa_action');
+            const qs = params?.toString();
+            try {
+                window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+            } catch (e) { /* sandboxed contexts — cosmetic only */ }
+        }
+
         async renderUserProjects(data) {
             await window.PrintAppShopify.loadTag(`${window.PrintAppShopify.ENDPOINTS.baseCdn}js/petite-vue.js`);
             await window.PrintAppShopify.loadTag(`${window.PrintAppShopify.ENDPOINTS.baseCdn}css/style.css`);
@@ -428,12 +493,12 @@ if (typeof this.PrintAppShopify === 'undefined') {
                             <img :src="project.pages[0]?.thumbnail" :alt="project.product?.name" />
                         </div>
                         <div class="printapp-project-details">
-                            <div class="printapp-project-name">{{project.product?.name || project.product?.title}}</div>
+                            <div class="printapp-project-name">{{project.product?.title || project.product?.name}}</div>
                             <div class="printapp-project-date">{{formatDate(project.modified || project.created)}}</div>
                         </div>
                         <div class="printapp-project-actions">
                             <button @click.prevent.stop="resumeProject" :data-project-id="project.id" class="printapp-project-btn printapp-project-btn-duplicate">
-                                <span v-if="project.saveForLater">{{lang.user_resume_project || 'Resume Design'}}</span>
+                                <span v-if="!project.completed">{{lang.user_resume_project || 'Resume Design'}}</span>
                                 <span v-else>{{lang.user_duplicate_project || 'Duplicate Design for Re-order'}}</span>
                             </button>
                         </div>
@@ -473,7 +538,10 @@ if (typeof this.PrintAppShopify === 'undefined') {
             store[project.product.id] = {
                 projectId: project.id,
                 previews: (project.pages || []).map(page => ({ url: page.preview })),
-                action: project.saveForLater ? 'resume' : 'reorder',
+                // Ordered projects duplicate (their file is what the merchant
+                // prints); everything else — saved-for-later AND unfinished
+                // autosaves — resumes, which doubles as design recovery.
+                action: project.completed ? 'reorder' : 'resume',
             };
             window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
 
