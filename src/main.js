@@ -144,19 +144,24 @@
 				this.model.ui.base = document.querySelector(this.model.env.commandSelector || '#pa-buttons');
 			}
 
+			static DISPLAY_MODES = ['modal', 'inline', 'mini', 'dialog'];
+
+			setDisplayClass(mode) {
+				for (const m of global.PrintAppClient.DISPLAY_MODES) this.model.ui.frame.classList.remove(`printapp-display-${m}`);
+				this.model.ui.frame.classList.add(`printapp-display-${mode}`);
+			}
+
 			handleDisplayMode() {
 				if (!this.model.env.settings.displayMode) this.model.env.settings.displayMode = 'modal';
 
 				if (this.model.env.settings.displayMode === 'mini' && !(this.model.env.settings.miniSelector || global.PrintAppClient.SELECTORS.mini)) {
 					this.model.env.settings.displayMode = 'modal';
 				}
-				
+
 				var mounted = false;
 				switch (this.model.env.settings.displayMode) {
 					case 'mini':
-						this.model.ui.frame.classList.remove('printapp-display-modal');
-						this.model.ui.frame.classList.remove('printapp-display-inline');
-						this.model.ui.frame.classList.add('printapp-display-mini');
+						this.setDisplayClass('mini');
 						this.model.ui.frameParent = document.querySelector(this.model.env.settings.miniSelector || global.PrintAppClient.SELECTORS.mini);
 						if (this.model.ui.frameParent) {
 							this.model.ui.frameParent.innerHTML = '';
@@ -165,11 +170,16 @@
 						}
 					break;
 					case 'inline':
-						this.model.ui.frame.classList.remove('printapp-display-modal');
-						this.model.ui.frame.classList.remove('printapp-display-mini');
-						this.model.ui.frame.classList.add('printapp-display-inline');
+						this.setDisplayClass('inline');
 						this.model.ui.frameParent = document.querySelector(this.model.env.settings.inlineSelector || '[null]');
 						this.model.ui.frameParent?.insertBefore?.(this.model.ui.frame, this.model.ui.frameParent.firstChild);
+						mounted = true;
+					break;
+					case 'dialog':
+						//	Body-mounted like modal; the centered box, backdrop
+						//	and expanded state are all CSS.
+						this.setDisplayClass('dialog');
+						document.body.appendChild(this.model.ui.frame);
 						mounted = true;
 					break;
 				}
@@ -177,9 +187,7 @@
 				if (!mounted) {
 					this.model.ui.displayMode = this.model.env.settings.displayMode = 'modal';
 					document.body.appendChild(this.model.ui.frame);
-					this.model.ui.frame.classList.add('printapp-display-modal');
-					this.model.ui.frame.classList.remove('printapp-display-inline');
-					this.model.ui.frame.classList.remove('printapp-display-mini');
+					this.setDisplayClass('modal');
 				}
 
 			}
@@ -441,6 +449,8 @@
 				this.fire('app:before:close');
 
 				this.model.ui.frame.classList.remove('printapp-shown');
+				//	A dialog closed while expanded must reopen at dialog size.
+				this.model.ui.frame.classList.remove('printapp-dialog-expanded');
 				this.unlockScroll();
 				switch (this.model.env.settings.displayMode) {
 					case 'mini':
@@ -462,6 +472,22 @@
 				this.options?.onEditorClosed();
 
 				this.fire('app:after:close');
+			}
+			/**
+			 * Editor-driven expand/shrink for the dialog display. The control
+			 * lives inside the editor, which posts `app:display:toggle`; data
+			 * may force a direction ({ expanded: true|false }), otherwise we
+			 * toggle. No-op in every other display mode. The resulting state
+			 * goes back out as `app:display:changed` so the editor (and any
+			 * page listener) can keep its icon in sync.
+			 */
+			toggleDialogSize(data) {
+				if (this.model.env.settings.displayMode !== 'dialog') return;
+				const expanded = (typeof data?.expanded === 'boolean')
+					? data.expanded
+					: !this.model.ui.frame.classList.contains('printapp-dialog-expanded');
+				this.model.ui.frame.classList.toggle('printapp-dialog-expanded', expanded);
+				this.fire('app:display:changed', { expanded });
 			}
 			saved(value) {
 				this.model.session = value;
@@ -564,6 +590,10 @@
 							this.fire(message.event, message.data, true);
 							this.closeApp();	//	releases the hold for us
 							this.setCommandPref();
+						break;
+						case 'app:display:toggle':
+							this.toggleDialogSize(message.data);
+							this.fire(message.event, message.data, true);
 						break;
 						case 'app:validation:success':
 							this.model.settings = message.data.settings;
