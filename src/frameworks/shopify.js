@@ -324,10 +324,15 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 // to their fresh session before they go anywhere else. On
                 // hosted-accounts stores the account page can't claim at all,
                 // so returning there would show an empty list.
+                // /customer_authentication/login is Shopify's unified auth
+                // route — it exists on BOTH account systems and, unlike
+                // /account/login on hosted-accounts stores, honours return_to
+                // back to a storefront path. The customer lands back on this
+                // product page with a session, where the claim fires.
                 const returnTo = window.location.pathname + window.location.search;
                 window.location.href = this.model.userData?.id
                     ? '/account'
-                    : `/account/login?return_url=${encodeURIComponent(returnTo)}`;
+                    : `/customer_authentication/login?return_to=${encodeURIComponent(returnTo)}`;
                 return;
             }
 
