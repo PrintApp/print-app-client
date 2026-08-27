@@ -2,6 +2,10 @@
 
 .printapp-frame{ overflow: hidden; border: none; z-index: -10; position: fixed; pointer-events: none; transform: scale(0); filter: brightness(0.6); transition: transform .3s ease-out .2s, filter .3s ease-out .4s; }
 .printapp-frame.printapp-shown{ display: block; z-index: 999999999; pointer-events: auto; transform: scale(1); filter: brightness(0.6); }
+/* Close animation: printapp-shown is gone (so the scale(0) transition runs)
+   but the frame must finish shrinking ABOVE the page before it drops back
+   under it. The client removes this class once the animation is over. */
+.printapp-frame.printapp-closing{ display: block; z-index: 999999999; }
 .printapp-commands { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem; }
 .printapp-commands>*{ max-width: 35rem; margin-left: 0; }
 .printapp-commands > button > * { pointer-events: none; }

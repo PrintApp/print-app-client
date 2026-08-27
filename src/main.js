@@ -137,6 +137,13 @@
 				frame.src = `${global.PrintAppClient.ENDPOINTS.cdnBase}${this.editorPath()}index.html`;
 				frame.title = 'Print.App';
 				frame.classList.add('printapp-frame');
+				//	INLINE, not stylesheet: the frame is mounted before the CDN
+				//	stylesheet arrives, and until then it renders as a raw
+				//	unstyled iframe — visible, then animating shut when the CSS
+				//	lands (late-applied styles DO run the scale transition).
+				//	An inline display:none cannot lose that race. showApp clears
+				//	it; from then on the stylesheet's scale(0) state owns hiding.
+				frame.style.display = 'none';
 				return frame;
 			}
 
@@ -389,6 +396,12 @@
 				this.lockScroll();
 
 				document.body.style.position = 'relative';
+				//	Lift the boot-time inline hide (see makeFrame) so the
+				//	stylesheet's printapp-shown rules can take over. A reopen
+				//	mid-close animation also cancels the closing state.
+				this.model.ui.frame.style.display = '';
+				clearTimeout(this.model.act.closingTimer);
+				this.model.ui.frame.classList.remove('printapp-closing');
 				this.model.ui.frame.classList.add('printapp-shown');
 
 				if (!this.model.isMobile) {
@@ -447,6 +460,15 @@
 			}
 			closeApp() {
 				this.fire('app:before:close');
+
+				//	Dropping printapp-shown also drops the z-index instantly,
+				//	which slid the still-visible editor underneath the page
+				//	before its shrink transition had run. printapp-closing pins
+				//	the stacking level until the animation (.2s delay + .3s) is
+				//	done; only then does the frame tuck back under the page.
+				this.model.ui.frame.classList.add('printapp-closing');
+				clearTimeout(this.model.act.closingTimer);
+				this.model.act.closingTimer = setTimeout(() => this.model.ui.frame.classList.remove('printapp-closing'), 600);
 
 				this.model.ui.frame.classList.remove('printapp-shown');
 				//	A dialog closed while expanded must reopen at dialog size.
