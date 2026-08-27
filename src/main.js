@@ -539,15 +539,23 @@
 						break;
 						case 'app:saved':
 							this.model.state.saved = true;
-							
+
 							if (message.data && message.data.mode && !message.data.mode.includes('artwork'))
 								message.data.mode = 'edit-project';
 
 							this.saved(message.data);
 							this.fire(message.event, message.data, true);
-							this.closeApp();
+							// MINI display: the frame IS the product visual —
+							// collapsing it on save left a blank gallery (the
+							// mini mount replaced its contents, so there is no
+							// element for updatePreviews to fill). The editor
+							// holds preview mode after submit (read-only, the
+							// finished piece), so the frame simply stays.
+							if (this.model.env.settings.displayMode !== 'mini') {
+								this.closeApp();
+								this.updatePreviews();
+							}
 							this.setCommandPref();
-							this.updatePreviews();
 							this.handleCartBtn();
 							this.options?.onDesignSaved();
 						break;
