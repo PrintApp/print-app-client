@@ -423,11 +423,22 @@
 				
 				setTimeout(_ => this.model.ui.frame.style.filter = 'none', 1e3);
 				this.model.state.shown = true;
-				this.sendMsg('app:show', {
+				const showPayload = {
 					artwork: event?.target?.dataset?.cmd === 'artwork',
 					variant: global.PrintAppClient.getSelectedVariant(this.model.env.settings?.customVariantSelector),
 					designId: event?.designId,
-				});
+				};
+				// A click DURING the iframe's boot has no messageSource yet
+				// — the app:show would drop silently and the editor sits at
+				// its empty shell (Help panel, bare canvas) with the frame
+				// open. Queue it; the editor's announce flushes it. Kept
+				// around regardless: appReady re-sends it as the final
+				// reconciliation (messages in the boot window can be lost
+				// even after the announce — seen live).
+				this.model.act.lastShow = showPayload;
+				if (!this.sendMsg('app:show', showPayload)) {
+					this.model.act.pendingShow = showPayload;
+				}
 				this.setCommandPref();
 				this.options?.onEditorOpened();
 
@@ -554,7 +565,17 @@
 			}
 
 			appReady() {
-				if (this.model.env.autoShow) this.showApp();
+				if (this.model.env.autoShow) return this.showApp();
+				// RECONCILIATION: app:ready is the one message proven to
+				// arrive in both directions — if the customer opened the
+				// frame during boot and the editor never acknowledged the
+				// show (the early app:show can get lost around the boot
+				// window even after the announce), tell it again here.
+				// Editor-side show() is idempotent and the one-load-per-
+				// design guard dedupes any overlap.
+				if (this.model.state.shown) {
+					this.sendMsg('app:show', this.model.act.lastShow || {});
+				}
 			}
 
 			validationComplete() {
@@ -568,6 +589,7 @@
 				const handler = handle || this.model.ui.messageSource;
 				if (!handler) return false;
 				handler.postMessage(message, global.PrintAppClient.ENDPOINTS.frameDomain);
+				return true;
 			}
 
 			handleMsg (event) {
@@ -580,6 +602,12 @@
 						case global.PrintAppClient.EDITOR_NAME:
 							this.model.ui.messageSource = event.source;
 							this.sendMsg(global.PrintAppClient.NAME, this.model.env);
+							// The customer clicked while the editor was still
+							// booting — deliver the show it missed.
+							if (this.model.act.pendingShow) {
+								this.sendMsg('app:show', this.model.act.pendingShow);
+								this.model.act.pendingShow = null;
+							}
 						break;
 						case 'app:ready':
 							this.appReady();
@@ -605,7 +633,7 @@
 							}
 							this.setCommandPref();
 							this.handleCartBtn();
-							this.options?.onDesignSaved();
+							this.options?.onDesignSaved(message.data);
 						break;
 						case 'app:closed':
 							this.model.state.closed = true;
@@ -1206,8 +1234,15 @@
 				this.hold(this.lang.finish_design || 'Finish your design');
 			}
 
-			onDesignSaved() {
+			onDesignSaved(data) {
 				if (!this.ready) return;
+				//	Billable canvas from the save payload (gang sheets:
+				//	film width x nested length). publishDesign forwards
+				//	it to the widget as file.canvas for perLength /
+				//	perArea pricing.
+				if (data?.canvas?.w && data?.canvas?.h) {
+					this.canvas = { w: data.canvas.w, h: data.canvas.h, unit: data.canvas.unit || 'mm' };
+				}
 				this.publishDesign();
 				this.release();
 				this.applyForceCustomization();
