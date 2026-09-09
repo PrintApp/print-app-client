@@ -749,7 +749,9 @@
 								type: target.tagName,
 							};
 					}
-					return {};
+					//	Anything else (a price <span>, a total <div>): its text. Read
+					//	back into the editor so the builder can show the live price.
+					return { value: (target.textContent || '').trim(), type: 'TEXT' };
 				};
 
 				// send the initial value...
@@ -760,8 +762,22 @@
 					callbackData: data.callbackData,
 				})
 
-				// then add the event listener...
-				const eventType = (element.tagName === 'BUTTON') ? 'click' : 'change'; 
+				// then add the event listener... (text nodes have no change event:
+				// watch their content instead - themes rewrite the price node)
+				if (!['SELECT', 'INPUT', 'FIELDSET', 'BUTTON', 'TEXTAREA'].includes(element.tagName)) {
+					const observer = new MutationObserver(() => {
+						if (this.model.state._pauseDispatch) return;
+						this.sendMsg(data.callbackEvent, {
+							selector: data.selector,
+							...elementValues(element),
+							event: 'change',
+							callbackData: data.callbackData,
+						});
+					});
+					observer.observe(element, { childList: true, characterData: true, subtree: true });
+					return;
+				}
+				const eventType = (element.tagName === 'BUTTON') ? 'click' : 'change';
 				element.addEventListener(eventType, evt => {
 					if (this.model.state._pauseDispatch) return;
 
@@ -1145,6 +1161,10 @@
 				this.el?.unregisterProducer?.(global.PrintAppClient.OptionsBridge.SOURCE);
 				this.bound.clear();
 				this.pending = [];
+				this.priceWatchers = [];
+				this.lastPrice = undefined;
+				this.items = null;
+				this.canvas = null;
 				this.ready = false;
 				this.el = null;
 			}
@@ -1188,7 +1208,10 @@
 				//	Provider extras live under `raw` — unknown top-level keys are
 				//	stripped by the widget's FileMetadata contract.
 				const previewUrl = session.previews?.[0]?.url;
-				if (previewUrl) record.raw = { previewUrl, projectId: session.projectId };
+				const raw = {};
+				if (previewUrl) Object.assign(raw, { previewUrl, projectId: session.projectId });
+				if (this.items) raw.items = this.items;
+				if (Object.keys(raw).length) record.raw = raw;
 
 				this.el.setFile(record, { source: Bridge.SOURCE });
 			}
@@ -1243,6 +1266,9 @@
 				if (data?.canvas?.w && data?.canvas?.h) {
 					this.canvas = { w: data.canvas.w, h: data.canvas.h, unit: data.canvas.unit || 'mm' };
 				}
+				//	Transfers by size: the per-design breakdown (display /
+				//	production ticket only - it rides record.raw, never priced).
+				this.items = Array.isArray(data?.items) && data.items.length ? data.items : null;
 				this.publishDesign();
 				this.release();
 				this.applyForceCustomization();
@@ -1371,6 +1397,7 @@
 					this.pending.push(data);
 					return;
 				}
+				if (data.selector === global.PrintAppClient.OptionsBridge.PREFIX + 'price') return this.hookPrice(data);
 				const found = this.resolve(data.selector);
 				if (!found) return;	//	merchant removed the field: stay quiet
 
@@ -1383,6 +1410,40 @@
 					callbackData: data.callbackData
 				});
 				this.send(this.bound.get(id), 'init');
+			}
+
+			/**
+			 * `po:price` - not a field but the widget's computed price. The
+			 * editor's gang sheet summary shows it live (plan P6.7). Sent on
+			 * init and whenever state.price.total changes; never fed back.
+			 */
+			hookPrice(data) {
+				this.priceWatchers = this.priceWatchers || [];
+				const id = data.callbackData?.connectorId || data.selector;
+				this.priceWatchers = this.priceWatchers.filter(w => w.id !== id);
+				this.priceWatchers.push({ id, selector: data.selector, callbackEvent: data.callbackEvent, callbackData: data.callbackData });
+				this.lastPrice = undefined;
+				this.notifyPrice('init');
+			}
+
+			notifyPrice(eventType) {
+				if (!this.priceWatchers?.length) return;
+				const price = this.el?.state?.price;
+				if (!price) return;
+				const key = `${price.total}|${price.currency}|${price.unavailable ? 1 : 0}`;
+				if (eventType !== 'init' && key === this.lastPrice) return;
+				this.lastPrice = key;
+				for (const w of this.priceWatchers) {
+					this.client.sendMsg(w.callbackEvent, {
+						selector: w.selector,
+						value: price.total,
+						currency: price.currency,
+						unavailable: price.unavailable === true,
+						type: 'PRICE',
+						event: eventType,
+						callbackData: w.callbackData
+					});
+				}
 			}
 
 			send(entry, eventType) {
@@ -1405,7 +1466,12 @@
 			 */
 			onWidgetChange(event) {
 				const detail = event?.detail;
-				if (!detail || detail.source === global.PrintAppClient.OptionsBridge.SOURCE) return;
+				if (!detail) return;
+				//	Price readback runs BEFORE echo suppression: a reprice caused
+				//	by our own quantity/dimension write is exactly what the
+				//	editor's summary is waiting for.
+				this.notifyPrice('change');
+				if (detail.source === global.PrintAppClient.OptionsBridge.SOURCE) return;
 
 				const changed = detail.changed || [];
 				this.bound.forEach(entry => {
