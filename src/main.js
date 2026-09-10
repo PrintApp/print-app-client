@@ -333,6 +333,17 @@
 			
 			setCommandPref() {
 				if (!this.model.ui.vue) return;
+				//	A Print Options widget that offers our designer as one of its
+				//	artwork routes owns the product page's launch button: our own
+				//	Customize / Upload / Clear would be a second, unpriced path
+				//	beside it (the theme's add-to-cart, not the widget's).
+				if (this.options?.offersProducer) {
+					this.model.ui.vue.buttons.showCustomize = false;
+					this.model.ui.vue.buttons.showUpload = false;
+					this.model.ui.vue.buttons.showClear = false;
+					this.model.ui.vue.buttons.editMode = false;
+					return;
+				}
 				if (this.model.state.shown && ['mini', 'inline'].includes(this.model.env.settings.displayMode)) {
 					this.model.ui.vue.buttons.showCustomize = false;
 					this.model.ui.vue.buttons.showUpload = false;
@@ -1042,6 +1053,8 @@
 
 			el = null;
 			ready = false;
+			/** The widget lists our designer among its artwork routes. */
+			offersProducer = false;
 			/** connectorId -> { selector, target, callbackEvent, callbackData } */
 			bound = new Map();
 			/** Registrations that arrived before the widget was ready. */
@@ -1121,6 +1134,8 @@
 					this.listen('producer', event => {
 						if (event?.detail?.producer === Bridge.SOURCE) this.client.showApp();
 					});
+					this.offersProducer = true;
+					this.client.setCommandPref?.();
 				}
 
 				//	One listener for every inbound connector: the widget emits a
@@ -1159,6 +1174,7 @@
 				this.listeners = [];
 				this.release();
 				this.el?.unregisterProducer?.(global.PrintAppClient.OptionsBridge.SOURCE);
+				this.offersProducer = false;
 				this.bound.clear();
 				this.pending = [];
 				this.priceWatchers = [];
