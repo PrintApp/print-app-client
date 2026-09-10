@@ -145,7 +145,20 @@ if (typeof this.PrintAppShopify === 'undefined') {
 
             let designList = this.model.designData?.designs || [];
             if (Object.keys(this.model.designData?.variants || {}).length) {
-                designList = designList.concat(Object.values(this.model.designData.variants).flat())
+                // Variant map values are variant RECORDS ({id: <variantId>,
+                // designs: [...]}) — flat() on records is a no-op, so this
+                // used to push the records themselves and the editor read a
+                // Shopify variant id as a design id (blank editor on
+                // variant-only products). Collect the actual designs
+                // (legacy array values pass through) and dedupe by id.
+                const seen = new Set(designList.map(d => d?.id));
+                const variantDesigns = Object.values(this.model.designData.variants)
+                    .map(v => (Array.isArray(v) ? v : v?.designs) || []).flat();
+                for (const design of variantDesigns) {
+                    if (!design?.id || seen.has(design.id)) continue;
+                    seen.add(design.id);
+                    designList = designList.concat(design);
+                }
             }
 
             this.model.instance = window.printAppInstance = new PrintAppClient({
