@@ -74,6 +74,14 @@
 					}
 				}
 				this.model.env.settings ??= {};
+				//	A page that boots with a project id (the store remembered
+				//	the customer's saved design) IS an edit session: the
+				//	buttons read Resume, and the Print Options bridge hands
+				//	the widget the saved design instead of an empty slot.
+				if (this.model.env.projectId && !this.model.session?.projectId) {
+					this.model.session = { ...(this.model.session || {}), projectId: this.model.env.projectId };
+					this.model.state.mode = 'edit-project';
+				}
 				this.model.env.language ??= {};
 
 				if (params.settingsOverride)
@@ -543,6 +551,20 @@
 				this.options?.onDesignCleared();
 				this.fire('app:project:reset', { projectId: this.model.session.projectId });
 			}
+			/**
+			 * The editor could not load the remembered project (its content
+			 * is gone, or the record is broken). Holding on to it would
+			 * re-open the same dead project on every click, so forget it:
+			 * the next open starts a new design.
+			 */
+			staleProject(data) {
+				const projectId = this.model.session?.projectId || this.model.env?.projectId;
+				delete this.model.env.projectId;
+				this.model.session = {};
+				this.closeApp();
+				this.clearDesign();
+				this.fire('app:design:failed', { ...(data || {}), projectId }, true);
+			}
 			updatePreviews() {
 				if (this.model?.env?.settings?.retainProductImages) return;
 				if (!this.model?.env?.previewsSelector && !this.model?.env?.settings?.customPreviewSelector) return;
@@ -645,6 +667,9 @@
 							this.setCommandPref();
 							this.handleCartBtn();
 							this.options?.onDesignSaved(message.data);
+						break;
+						case 'app:design:failed':
+							this.staleProject(message.data);
 						break;
 						case 'app:closed':
 							this.model.state.closed = true;
@@ -1125,8 +1150,11 @@
 				const Bridge = global.PrintAppClient.OptionsBridge;
 
 				if (this.hasDesign && typeof this.el.registerProducer === 'function') {
+					const resuming = this.client?.model?.state?.mode === 'edit-project';
 					this.el.registerProducer(Bridge.SOURCE, {
-						label: this.lang.customize || 'Personalise Design',
+						label: resuming
+							? (this.lang.resume || 'Resume Design')
+							: (this.lang.customize || 'Personalise Design'),
 						description: this.lang.customize_hint || undefined
 					});
 					//	The widget only reports the customer's intent — opening the
