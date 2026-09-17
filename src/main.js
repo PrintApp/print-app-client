@@ -41,7 +41,14 @@
 			};
 
 			constructor(params) {
-				window.onmessage = this.handleMsg.bind(this);
+				//	A listener, never the window.onmessage slot: that slot is single-
+				//	assignment, and any other script that sets it (PitchPrint does, on
+				//	every product page) silently replaced ours — the editor's handshake
+				//	was lost, the frame opened invisible and saves went nowhere, all
+				//	depending on load order. (Merchant report, 2026-09-17.) Kept as a
+				//	bound reference so destroyApp can take it off again.
+				this.onMessage = this.handleMsg.bind(this);
+				window.addEventListener('message', this.onMessage);
 				
 				if (!params) return console.error('Parameters required but undefined was passed'); 
 				this.init(params);
@@ -485,6 +492,7 @@
 				//	the widget keeps listening to a client that no longer exists.
 				this.unlockScroll();
 				this.options?.dispose();
+				window.removeEventListener('message', this.onMessage);
 				this.model.ui.frame.remove();
 				this.fire('app:after:destroy');
 			}
@@ -627,6 +635,11 @@
 
 			handleMsg (event) {
 				if (event.origin !== global.PrintAppClient.ENDPOINTS.frameDomain) return;
+				//	Listeners stack where the old slot replaced, so with two clients on
+				//	one page each would hear the other's editor. Only our own frame's
+				//	messages are ours (no frame yet = nothing to confuse it with).
+				const own = this.model.ui.frame?.contentWindow;
+				if (own && event.source !== own) return;
 				
 				const message = global.PrintAppClient.parse(event.data);
 
