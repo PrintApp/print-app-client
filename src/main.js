@@ -1098,6 +1098,8 @@
 			ready = false;
 			/** The widget lists our designer among its artwork routes. */
 			offersProducer = false;
+			/** Our design currently fills the widget's artwork slot. */
+			published = false;
 			/** connectorId -> { selector, target, callbackEvent, callbackData } */
 			bound = new Map();
 			/** Registrations that arrived before the widget was ready. */
@@ -1168,13 +1170,7 @@
 				const Bridge = global.PrintAppClient.OptionsBridge;
 
 				if (this.hasDesign && typeof this.el.registerProducer === 'function') {
-					const resuming = this.client?.model?.state?.mode === 'edit-project';
-					this.el.registerProducer(Bridge.SOURCE, {
-						label: resuming
-							? (this.lang.resume || 'Resume Design')
-							: (this.lang.customize || 'Personalise Design'),
-						description: this.lang.customize_hint || undefined
-					});
+					this.offer();
 					//	The widget only reports the customer's intent — opening the
 					//	editor is ours to do.
 					this.listen('producer', event => {
@@ -1196,6 +1192,25 @@
 
 				const queued = this.pending.splice(0);
 				queued.forEach(data => this.hook(data));
+			}
+
+			/**
+			 * (Re)register our producer with the label the client's mode
+			 * calls for. Re-registering the same id replaces the entry, so
+			 * this is safe to call whenever the mode moves: a design just
+			 * saved offers "Resume", a design just removed offers
+			 * "Personalise" again.
+			 */
+			offer() {
+				const Bridge = global.PrintAppClient.OptionsBridge;
+				if (!this.el || typeof this.el.registerProducer !== 'function') return;
+				const resuming = this.client?.model?.state?.mode === 'edit-project';
+				this.el.registerProducer(Bridge.SOURCE, {
+					label: resuming
+						? (this.lang.resume || 'Resume Design')
+						: (this.lang.customize || 'Personalise Design'),
+					description: this.lang.customize_hint || undefined
+				});
 			}
 
 			/** Subscribe to the widget, remembering how to unsubscribe. */
@@ -1221,6 +1236,7 @@
 				this.release();
 				this.el?.unregisterProducer?.(global.PrintAppClient.OptionsBridge.SOURCE);
 				this.offersProducer = false;
+				this.published = false;
 				this.bound.clear();
 				this.pending = [];
 				this.priceWatchers = [];
@@ -1276,9 +1292,11 @@
 				if (Object.keys(raw).length) record.raw = raw;
 
 				this.el.setFile(record, { source: Bridge.SOURCE });
+				this.published = true;
 			}
 
 			clearDesign() {
+				this.published = false;
 				if (typeof this.el?.setFile !== 'function') return;
 				this.el.setFile(null, { source: global.PrintAppClient.OptionsBridge.SOURCE });
 			}
@@ -1346,6 +1364,7 @@
 			onDesignCleared() {
 				if (!this.ready) return;
 				this.clearDesign();
+				if (this.offersProducer) this.offer();
 				this.applyForceCustomization();
 			}
 
@@ -1536,6 +1555,21 @@
 				if (detail.source === global.PrintAppClient.OptionsBridge.SOURCE) return;
 
 				const changed = detail.changed || [];
+				//	The artwork card's Remove: the widget emptied the slot we
+				//	filled, and nothing told us — the client stayed in
+				//	edit-project with the old session, so the next click
+				//	reopened the removed design and the forceCustomization
+				//	hold never came back (sonnentinte.de, 2026-09-17). The
+				//	widget never emits a spurious file change (its snapshot
+				//	is primed before `ready`), so a change that empties the
+				//	slot we published IS a removal: clear exactly as our own
+				//	Clear button does, which also lets the framework forget
+				//	the stored project.
+				if (this.published && changed.includes('file') && !detail.file) {
+					this.published = false;
+					this.client.clearDesign();
+					return;
+				}
 				this.bound.forEach(entry => {
 					if (!changed.includes(`selections.${entry.fieldId}`)) return;
 					this.send(entry, 'change');
