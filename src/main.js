@@ -193,9 +193,14 @@
 					break;
 					case 'inline':
 						this.setDisplayClass('inline');
-						this.model.ui.frameParent = document.querySelector(this.model.env.settings.inlineSelector || '[null]');
-						this.model.ui.frameParent?.insertBefore?.(this.model.ui.frame, this.model.ui.frameParent.firstChild);
-						mounted = true;
+						//	An empty or non-matching inlineSelector leaves nothing to
+						//	mount into; fall through to the modal fallback below
+						//	rather than stranding the frame off-DOM (dead Customize button).
+						this.model.ui.frameParent = this.model.env.settings.inlineSelector ? document.querySelector(this.model.env.settings.inlineSelector) : null;
+						if (this.model.ui.frameParent) {
+							this.model.ui.frameParent.insertBefore(this.model.ui.frame, this.model.ui.frameParent.firstChild);
+							mounted = true;
+						}
 					break;
 					case 'dialog':
 						//	Body-mounted like modal; the centered box, backdrop
