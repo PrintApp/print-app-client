@@ -640,6 +640,13 @@
 
 			handleMsg (event) {
 				if (event.origin !== global.PrintAppClient.ENDPOINTS.frameDomain) return;
+				//	Merchant pages forward editor messages to us by hand (shims
+				//	written against the old window.onmessage slot keep calling
+				//	printAppInstance.handleMsg), so the same Event can arrive twice —
+				//	and a duplicated announce reply double-drives the editor's
+				//	validate. Same-object identity is the dedupe.
+				if (event === this.model.act.lastMsgEvent) return;
+				this.model.act.lastMsgEvent = event;
 				//	Listeners stack where the old slot replaced, so with two clients on
 				//	one page each would hear the other's editor. Only our own frame's
 				//	messages are ours (no frame yet = nothing to confuse it with).
