@@ -733,6 +733,10 @@
 
 			updateElement(data) {
 				if (!data?.selector) return;
+				//	pageCount reports { count }; every consumer below wants the number.
+				//	Unwrapped ONCE here so the widget path and the DOM path agree —
+				//	through the widget, Number({count}) is NaN and the mode wrote nothing.
+				data = { ...data, value: global.PrintAppClient.OptionsBridge.unwrapValue(data.value) };
 				//	Print Options fields live in a shadow root and are owned by Vue:
 				//	they take a value through the widget's API, never through the DOM.
 				if (global.PrintAppClient.OptionsBridge.targets(data.selector))
@@ -1584,6 +1588,12 @@
 			}
 
 			/* Writing ------------------------------------------------------- */
+
+			/** { count: n } (pageCount's shape) -> n; anything else unchanged. */
+			static unwrapValue(value) {
+				if (value && typeof value === 'object' && !Array.isArray(value) && 'count' in value) return value.count;
+				return value;
+			}
 
 			static convert(value, from, to) {
 				const table = global.PrintAppClient.OptionsBridge.UNITS_IN_MM;
