@@ -141,6 +141,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
                     <input id="_printapp-pdf-download" name="properties[_printapp-pdf-download]" type="hidden" value="">
                 `);
                 this.setElementValue(isReorder ? '' : currentValue.projectId || '');
+                this.setOrderInputs(isReorder ? [] : currentValue.orderData);
             }
 
             let designList = this.model.designData?.designs || [];
@@ -251,6 +252,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
                     `);
                     const store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
                     this.setElementValue(store[this.model.productId]?.projectId || '');
+                    this.setOrderInputs(store[this.model.productId]?.orderData);
                 }
 
                 // Re-mount the petite-vue command UI into the new #pa-buttons node.
@@ -303,7 +305,10 @@ if (typeof this.PrintAppShopify === 'undefined') {
             window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
             window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
             
-            if (!keepInput) this.setElementValue('');
+            if (!keepInput) {
+                this.setElementValue('');
+                this.setOrderInputs([]);
+            }
             setTimeout(() => {
                 window.location.reload();
             }, 3e3);
@@ -317,6 +322,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 
             
             this.setElementValue(data.projectId);
+            this.setOrderInputs(data.orderData);
             store[this.model.productId] = data;
             projects[data.projectId || this.model.currentProjectId] = data;
 
@@ -357,6 +363,30 @@ if (typeof this.PrintAppShopify === 'undefined') {
 
             if (element) element.value = value;
             if (pdfElement) pdfElement.value = value ? `${window.PrintAppShopify.ENDPOINTS.pdf}${value}` : '';
+        }
+        /**
+         * The editor's `orderData` pairs ("Include in order details" objects:
+         * text, graphic name, colour name…) as VISIBLE line item properties
+         * beside the hidden project id, so they show on the cart, checkout
+         * and the order. Replaces the previous set every time; `[]` clears.
+         * DOM APIs, not markup: a label with quotes must not break the form.
+         */
+        setOrderInputs(orderData) {
+            const   form = this.model.cartForm || document.getElementById('_printapp')?.form,
+                    anchor = document.getElementById('_printapp');
+            if (!form && !anchor) return;
+            (form || document).querySelectorAll('input[data-pa-order]').forEach(el => el.remove());
+            for (const entry of Array.isArray(orderData) ? orderData : []) {
+                const name = String(entry?.name || '').trim(), value = String(entry?.value ?? '').trim();
+                if (!name || !value) continue;
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = `properties[${name}]`;
+                input.value = value;
+                input.dataset.paOrder = '1';
+                if (anchor) anchor.insertAdjacentElement('afterend', input);
+                else form.insertAdjacentElement('afterbegin', input);
+            }
         }
         setAddToCartAction() {
 			if (!this.model.instance || (this.model.instance?.model?.env?.settings?.displayMode === 'mini')) return;
@@ -556,6 +586,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
             store[project.product.id] = {
                 projectId: project.id,
                 previews: (project.pages || []).map(page => ({ url: page.preview })),
+                orderData: Array.isArray(project.orderData) ? project.orderData : [],
                 // Ordered projects duplicate (their file is what the merchant
                 // prints); everything else — saved-for-later AND unfinished
                 // autosaves — resumes, which doubles as design recovery.
@@ -575,10 +606,15 @@ if (typeof this.PrintAppShopify === 'undefined') {
                         pdfElement = document.getElementById(`_printapp-pdf-download`);
 
                 if (element?.value && pdfElement?.value) {
+                    const orderProps = {};
+                    document.querySelectorAll('input[data-pa-order]').forEach(el => {
+                        orderProps[el.name.slice('properties['.length, -1)] = el.value;
+                    });
                     requestBody.items[0].properties = {
                         ...requestBody.items[0].properties,
                         _printapp: element.value,
                         _printapp_pdf_download: pdfElement.value,
+                        ...orderProps,
                     };
 
                     // window?.printAppPrintShopifyInstance?.projectSaved?.({ data: { clear: true }})
