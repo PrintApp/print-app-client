@@ -1280,7 +1280,10 @@
 				const record = {
 					fileId,
 					source: Bridge.SOURCE,
-					fileName: this.lang.your_design || 'Your design'
+					//	No English fallback: the configurator labels a nameless design
+					//	itself, in the storefront's language ("Ihre Gestaltung" in a
+					//	German shop). A language pack entry still wins when present.
+					fileName: this.lang.your_design || undefined
 				};
 
 				//	One preview per page, so the preview count IS the page count.
