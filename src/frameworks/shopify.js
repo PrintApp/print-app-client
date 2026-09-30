@@ -201,6 +201,9 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 if (currentValue.projectId && !isReorder) this.setAddToCartAction();
             }, 1e3);
 
+            // Keep our mounts alive across theme form re-renders: the light
+            // detector always, the body-wide observer only where switched on.
+            this.armFormRerenderDetection();
             if (this.model.designData?.settings?.observeFormRerenders) {
                 this.observeFormRerenders();
             }
@@ -214,65 +217,152 @@ if (typeof this.PrintAppShopify === 'undefined') {
             window.PrintAppShopify.initCustomModifications();
         }
 
-        // Some themes / variant calculators re-render the cart form on variant change,
-        // which removes #pa-buttons and our hidden inputs. Watch for that and restore them.
-        // Opt-in via designData.settings.observeFormRerenders to avoid impacting stores
-        // that don't need it.
-        observeFormRerenders() {
-            if (this._formObserver) return;
+        // ------------------------------------------------------------------
+        // Form re-render recovery.
+        //
+        // Themes and option/variant apps re-render the product form on variant
+        // change (Section Rendering fetch, then a morph against the fresh
+        // markup), which drops what we injected: #pa-buttons (the Customize
+        // button mount) and the hidden properties[_printapp] input that carries
+        // the project id into the cart. Losing the input is the worse failure —
+        // the button can survive in a Liquid mount while the form beneath it is
+        // replaced, and the customer then adds to cart with no project attached.
+        // Both are checked, independently, and both restored by restoreFormMounts.
+        //
+        // Two detectors:
+        //
+        //  LIGHT — always on, costs nothing at idle. Capture-phase click/change
+        //  (capture runs before a theme's stopPropagation; `click` is composed,
+        //  so it also reaches swatch buttons inside a shadow-DOM picker) plus
+        //  resource timings for section/product fetches — a theme can only
+        //  re-render with fresh variant markup after fetching it, whatever its
+        //  DOM looks like. Each signal is followed by a few getElementById
+        //  checks; the restore runs only when something is actually gone.
+        //
+        //  HEAVY — opt-in (settings.observeFormRerenders). A body-wide subtree
+        //  MutationObserver, for a theme that swaps pre-rendered markup with no
+        //  fetch and no event we can see. The browser has to record every DOM
+        //  change on the page for it, for the page's lifetime, so it stays a
+        //  switch rather than a default.
+        // ------------------------------------------------------------------
 
-            const restore = () => {
-                // Already present — nothing to do (also breaks the self-trigger loop).
-                if (document.getElementById('pa-buttons')) return;
+        /** Both of our injected nodes still in the document? */
+        formMountsIntact() {
+            return !!document.getElementById('pa-buttons') && !!document.getElementById('_printapp');
+        }
 
-                // Prefer the liquid mount point if the store uses it; otherwise re-locate
-                // a cart form via the same priority selector used at first mount.
-                const liquidForm = document.getElementById('print-app-shopify-mount');
-                let target, newForm;
-                if (liquidForm?.dataset?.productId) {
-                    newForm = liquidForm.closest('form')
-                        || window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
-                    target = liquidForm;
-                } else {
-                    newForm = window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
-                    target = newForm;
-                }
-                if (!newForm || !target) return;
+        /** Re-inject whatever is missing. Returns true when something was restored. */
+        restoreFormMounts() {
+            if (this.formMountsIntact()) return false;
 
-                this.model.cartForm = newForm;
+            // Prefer the liquid mount point if the store uses it; otherwise re-locate
+            // a cart form via the same priority selector used at first mount.
+            const liquidForm = document.getElementById('print-app-shopify-mount');
+            let target, newForm;
+            if (liquidForm?.dataset?.productId) {
+                newForm = liquidForm.closest('form')
+                    || window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+                target = liquidForm;
+            } else {
+                newForm = window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+                target = newForm;
+            }
+            if (!newForm || !target) return false;
 
-                // Re-inject the buttons mount point.
+            this.model.cartForm = newForm;
+
+            // The hidden inputs that carry the project id (and order details) into the cart.
+            if (!document.getElementById('_printapp')) {
+                newForm.insertAdjacentHTML('afterbegin', `
+                    <input id="_printapp" name="properties[_printapp]" type="hidden" value="">
+                    <input id="_printapp-pdf-download" name="properties[_printapp-pdf-download]" type="hidden" value="">
+                `);
+                const store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
+                this.setElementValue(store[this.model.productId]?.projectId || '');
+                this.setOrderInputs(store[this.model.productId]?.orderData);
+            }
+
+            const instance = this.model.instance;
+
+            // The buttons mount point, and the petite-vue command UI inside it.
+            if (!document.getElementById('pa-buttons')) {
                 target.insertAdjacentHTML('afterbegin', `<div id="pa-buttons"></div>`);
-
-                // Re-inject the hidden inputs that carry the project id into the cart.
-                if (!document.getElementById('_printapp')) {
-                    newForm.insertAdjacentHTML('afterbegin', `
-                        <input id="_printapp" name="properties[_printapp]" type="hidden" value="">
-                        <input id="_printapp-pdf-download" name="properties[_printapp-pdf-download]" type="hidden" value="">
-                    `);
-                    const store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
-                    this.setElementValue(store[this.model.productId]?.projectId || '');
-                    this.setOrderInputs(store[this.model.productId]?.orderData);
-                }
-
-                // Re-mount the petite-vue command UI into the new #pa-buttons node.
-                const instance = this.model.instance;
                 if (instance?.createCommandUI) {
                     instance.model.ui.base = document.getElementById('pa-buttons');
-                    // Re-resolve the cart button since it likely got replaced too.
-                    const cartSelector = instance.model.env?.settings?.cartButtonSelector
-                        || (window.PrintAppClient && window.PrintAppClient.SELECTORS?.cartButton);
-                    if (cartSelector) {
-                        instance.model.ui.cartButton = window.PrintAppShopify.queryPrioritySelector(cartSelector, true);
-                    }
                     instance.createCommandUI();
-                    // Re-attach the clear-on-add handler against the new cart button.
-                    setTimeout(() => {
-                        const stored = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY)[this.model.productId]?.projectId;
-                        if (this.model.currentProjectId || stored) this.setAddToCartAction();
-                    }, 0);
                 }
+            }
+
+            // Whatever was replaced, the cart button most likely was too: re-resolve
+            // it and re-attach the clear-on-add handler against the new element.
+            if (instance) {
+                const cartSelector = instance.model.env?.settings?.cartButtonSelector
+                    || (window.PrintAppClient && window.PrintAppClient.SELECTORS?.cartButton);
+                if (cartSelector) {
+                    instance.model.ui.cartButton = window.PrintAppShopify.queryPrioritySelector(cartSelector, true);
+                }
+                setTimeout(() => {
+                    const stored = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY)[this.model.productId]?.projectId;
+                    if (this.model.currentProjectId || stored) this.setAddToCartAction();
+                }, 0);
+            }
+            return true;
+        }
+
+        /** LIGHT detector — see the block comment above. */
+        armFormRerenderDetection() {
+            if (this._formRerenderArmed) return;
+            this._formRerenderArmed = true;
+
+            const check = () => { try { this.restoreFormMounts(); } catch (e) { console.error(e); } };
+
+            // A re-render lands some time after its trigger: the fetch has to
+            // resolve and the theme has to morph. Probe at a few points after each
+            // signal; a fresh signal resets the ladder. Every probe is two
+            // getElementById calls, so a burst of signals costs nothing.
+            let timers = [];
+            const probe = () => {
+                for (const t of timers) clearTimeout(t);
+                requestAnimationFrame(check);
+                timers = [300, 1200].map(ms => setTimeout(check, ms));
             };
+
+            document.addEventListener('click', probe, true);
+            document.addEventListener('change', probe, true);
+
+            if (typeof PerformanceObserver !== 'function') return;
+
+            const isRerenderFetch = (url) => {
+                try {
+                    const u = new URL(url, location.origin);
+                    // Section Rendering API — how Horizon, Dawn and most option
+                    // apps fetch the variant's markup.
+                    if (u.searchParams.has('section_id') || u.searchParams.has('sections')) return true;
+                    // Product JSON / a product page re-fetched with a variant
+                    // (locale prefixes are possible: match on the tail).
+                    const path = u.pathname.replace(/\/+$/, '');
+                    if (/\/products\/[^/]+\.js(on)?$/.test(path)) return true;
+                    return /\/products\/[^/]+$/.test(path) && u.searchParams.has('variant');
+                } catch { return false; }
+            };
+
+            try {
+                // Same mechanism as watchCartMutations: the browser records every
+                // fetch/XHR here, no patching of globals. Not buffered — requests
+                // that finished before mounting have nothing to do with a re-render.
+                this._formPerfObserver = new PerformanceObserver(list => {
+                    for (const entry of list.getEntries()) {
+                        if (entry.initiatorType !== 'fetch' && entry.initiatorType !== 'xmlhttprequest') continue;
+                        if (isRerenderFetch(entry.name)) return probe();
+                    }
+                });
+                this._formPerfObserver.observe({ type: 'resource' });
+            } catch (e) { console.error(e); }
+        }
+
+        /** HEAVY detector — opt-in via settings.observeFormRerenders; see above. */
+        observeFormRerenders() {
+            if (this._formObserver) return;
 
             // Debounce so a burst of mutations triggers one restore.
             let scheduled = false;
@@ -281,15 +371,13 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 scheduled = true;
                 requestAnimationFrame(() => {
                     scheduled = false;
-                    try { restore(); } catch (e) { console.error(e); }
+                    try { this.restoreFormMounts(); } catch (e) { console.error(e); }
                 });
             };
 
             // Watch document.body for structural changes (additions/removals of children)
             this._formObserver = new MutationObserver(() => {
-                if (!document.getElementById('pa-buttons')) {
-                    schedule();
-                }
+                if (!this.formMountsIntact()) schedule();
             });
             this._formObserver.observe(document.body, { childList: true, subtree: true });
         }
