@@ -29,6 +29,9 @@ if (typeof this.PrintAppShopify === 'undefined') {
         
         async init(params) {
             this.model = { ...params };
+            // Shopify's own page type when present: a collection handle can
+            // contain "/products" too (/collections/products-on-sale).
+            if (window.__st?.p) this.model.productPage = window.__st.p === 'product';
 
             if (!this.model.hostname) return console.error('This script needs to be loaded via wire');
 
@@ -89,7 +92,15 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 liquidForm.insertAdjacentHTML('afterbegin', paButtons);
 
             } else {
-                this.model.cartForm = window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+                // A grid (collection, search, a home page featured collection)
+                // carries one quick-add form per card. The single-product mount
+                // below would take whichever card form happens to be visible
+                // first and hang that one product's editor on it — so grids get
+                // their own per-card buttons instead.
+                if (!this.model.productPage && window.PrintAppShopify.gridProductIds().size > 1) {
+                    return this.mountCollection();
+                }
+                this.model.cartForm = this.findCartForm();
                 const productId = this.model.cartForm?.querySelector('input[name="product-id"]')?.value;
                 if (productId) this.model.productId = productId;
                 if (!this.model.cartForm || !this.model.productId) return;
@@ -189,6 +200,9 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 projectId: currentValue.projectId,
                 previews: currentValue.previews,
                 mode: isReorder ? 'new-project' : (currentValue.projectId ? 'edit-project' : 'new-project'),
+                // Arrived from a collection card's button (?pa_open=1): open
+                // the editor as soon as it is ready.
+                autoShow: !!this.model.autoShow,
                 commandSelector: '#pa-buttons',
                 previewsSelector: window.PrintAppShopify.SELECTORS.previews,
             });
@@ -215,6 +229,222 @@ if (typeof this.PrintAppShopify === 'undefined') {
             }
 
             window.PrintAppShopify.initCustomModifications();
+        }
+
+        /**
+         * The cart form the single-product mount attaches to. On a product
+         * page, the page's own product wins over any quick-add card form a
+         * recommendations or "recently viewed" grid placed earlier in the
+         * document; otherwise (and when no form carries the page's product
+         * id) the first visible cart form, as before.
+         */
+        findCartForm() {
+            const pageProductId = this.model.productPage && window.__st?.rid ? String(window.__st.rid) : '';
+            if (pageProductId) {
+                const own = Array.from(document.querySelectorAll(window.PrintAppShopify.SELECTORS.cartForm))
+                    .filter(form => form.querySelector('input[name="product-id"]')?.value === pageProductId && form.offsetParent);
+                const visible = own.find(form => form.offsetWidth > 0 && form.offsetHeight > 0) || own[0];
+                if (visible) return visible;
+            }
+            return window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+        }
+
+        // ------------------------------------------------------------------
+        // Collection grids.
+        //
+        // Every card whose product has Print.App designs gets a button that
+        // goes to the product page with ?pa_open=1 (and the card's selected
+        // variant), where the full product-page client opens the editor on
+        // arrival. Customizing on the product page keeps variant choice,
+        // previews, Print Options and the add-to-cart guards exactly as they
+        // are; a card has room for none of them.
+        //
+        // Opt-in per store (settings.collectionButtons). A product's feed is
+        // only fetched once its card nears the viewport, a few at a time —
+        // feeds run 20-30 KB over the wire for variant-heavy products — and
+        // cards the theme adds later (infinite scroll, filtering) are picked
+        // up by a debounced observer on the main content.
+        // ------------------------------------------------------------------
+
+        mountCollection() {
+            if (this._collection) return;
+            this._collection = {
+                feeds: new Map(),       // productId -> Promise<feed | null>
+                queue: [],
+                active: 0,
+            };
+
+            if (typeof IntersectionObserver === 'function') {
+                this._collection.visibility = new IntersectionObserver(entries => {
+                    for (const entry of entries) {
+                        if (!entry.isIntersecting) continue;
+                        this._collection.visibility.unobserve(entry.target);
+                        this.resolveCard(entry.target.__paCardForm);
+                    }
+                }, { rootMargin: '300px 0px' });
+            }
+
+            this.scanCollection();
+
+            let timer;
+            const rescan = () => {
+                clearTimeout(timer);
+                timer = setTimeout(() => { try { this.scanCollection(); } catch (e) { console.error(e); } }, 250);
+            };
+            const root = window.PrintAppShopify.queryPrioritySelector('#MainContent,main,[role="main"]') || document.body;
+            this._collection.observer = new MutationObserver(rescan);
+            this._collection.observer.observe(root, { childList: true, subtree: true });
+        }
+
+        /** Mark new card forms; restore buttons a theme morph dropped. Cheap when nothing changed. */
+        scanCollection() {
+            if (this._collection.stopped) return;
+            const forms = document.querySelectorAll(window.PrintAppShopify.SELECTORS.cartForm);
+            for (const form of forms) {
+                const productId = form.querySelector('input[name="product-id"]')?.value;
+                if (!productId) continue;
+
+                if (form.dataset.paCard === productId) {
+                    // Already handled — but a re-render can keep the form and drop
+                    // our button, or start rendering a form that was hidden.
+                    const hiddenNowShown = form.dataset.paCardHidden && form.getClientRects().length;
+                    if (hiddenNowShown || (form.dataset.paCardShown && !form.querySelector('.printapp-card-buttons'))) this.resolveCard(form);
+                    continue;
+                }
+                form.dataset.paCard = productId;
+                delete form.dataset.paCardShown;
+                delete form.dataset.paCardHidden;
+
+                const card = window.PrintAppShopify.cardRoot(form);
+                if (!card) continue;
+                card.__paCardForm = form;
+                if (this._collection.visibility) this._collection.visibility.observe(card);
+                else this.resolveCard(form);
+            }
+        }
+
+        async resolveCard(form) {
+            if (!form?.isConnected) return;
+            // A form the theme doesn't render (a sidebar list's hidden copy)
+            // could never show a button — don't spend a feed request on it.
+            if (!form.getClientRects().length) {
+                form.dataset.paCardHidden = '1';
+                return;
+            }
+            delete form.dataset.paCardHidden;
+            const productId = form.dataset.paCard;
+            const feed = await this.collectionFeed(productId);
+            if (!feed || !form.isConnected) return;
+            this.injectCardButton(form, productId, feed);
+        }
+
+        /** One feed request per product per page, a few in flight at a time. */
+        collectionFeed(productId) {
+            const state = this._collection;
+            if (state.feeds.has(productId)) return state.feeds.get(productId);
+
+            const promise = new Promise(resolve => {
+                state.queue.push(async () => {
+                    if (state.stopped) return resolve(null);
+                    const data = await fetch(`${window.PrintAppShopify.ENDPOINTS.runCdn}dom_sp_${this.model.storeId}/${productId}/sp?lang=${this.model.langCode}`)
+                        .then(d => d.json()).catch(() => null);
+                    // The switch is the store's: the first feed that carries
+                    // settings decides for the whole page, so a store that
+                    // hasn't opted in pays for one request, not one per card.
+                    if (data?.settings && data.settings.collectionButtons !== true) {
+                        this.stopCollection();
+                        return resolve(null);
+                    }
+                    const customizable = !!(data?.designs?.length || data?.artwork || Object.keys(data?.variants || {}).length);
+                    resolve(customizable ? data : null);
+                });
+                this.drainCollectionQueue();
+            });
+            state.feeds.set(productId, promise);
+            return promise;
+        }
+
+        stopCollection() {
+            const state = this._collection;
+            if (state.stopped) return;
+            state.stopped = true;
+            state.queue.length = 0;
+            state.visibility?.disconnect();
+            state.observer?.disconnect();
+        }
+
+        drainCollectionQueue() {
+            const state = this._collection;
+            while (state.active < 3 && state.queue.length) {
+                const job = state.queue.shift();
+                state.active++;
+                job().finally(() => {
+                    state.active--;
+                    this.drainCollectionQueue();
+                });
+            }
+        }
+
+        injectCardButton(form, productId, feed) {
+            if (form.querySelector('.printapp-card-buttons')) return;
+            const card = window.PrintAppShopify.cardRoot(form);
+            const link = card?.querySelector('a[href*="/products/"]');
+            if (!link) return;
+
+            const lang = feed.language || {};
+            const saved = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY)?.[productId];
+            const resuming = !!saved?.projectId && saved.action !== 'reorder';
+
+            const wrap = document.createElement('div');
+            wrap.className = 'printapp-card-buttons';
+            const button = document.createElement('a');
+            button.className = `${feed.settings?.buttonsClass || 'button'} btn btn-primary`;
+            button.textContent = resuming ? (lang.resume || 'Resume Design') : (lang.customize || 'Personalise Design');
+
+            // The card's swatches change its variant input after we render, so
+            // the target is re-read whenever the button is about to be used.
+            const target = () => {
+                try {
+                    const url = new URL(link.getAttribute('href'), window.location.origin);
+                    const variant = form.querySelector('[name="id"]')?.value;
+                    if (variant) url.searchParams.set('variant', variant);
+                    url.searchParams.set('pa_open', '1');
+                    button.href = url.pathname + url.search;
+                } catch (e) { console.error(e); }
+            };
+            target();
+            ['pointerdown', 'focus', 'click'].forEach(type => button.addEventListener(type, target));
+
+            wrap.appendChild(button);
+            form.insertAdjacentElement('afterbegin', wrap);
+            form.dataset.paCardShown = '1';
+        }
+
+        /** Distinct product ids among the page's cart forms. More than one means a grid. */
+        static gridProductIds() {
+            const ids = new Set();
+            document.querySelectorAll(window.PrintAppShopify.SELECTORS.cartForm).forEach(form => {
+                const id = form.querySelector('input[name="product-id"]')?.value;
+                if (id) ids.add(id);
+            });
+            return ids;
+        }
+
+        /**
+         * The card a quick-add form belongs to: the largest ancestor that still
+         * holds only this one product and has a link to it. Themes disagree on
+         * card markup, but never on a card holding a single product.
+         */
+        static cardRoot(form) {
+            const productId = form.querySelector('input[name="product-id"]')?.value;
+            let node = form.parentElement, card = null;
+            while (node && node !== document.body) {
+                const other = Array.from(node.querySelectorAll('input[name="product-id"]')).some(i => i.value !== productId);
+                if (other) break;
+                if (node.querySelector('a[href*="/products/"]')) card = node;
+                node = node.parentElement;
+            }
+            return card;
         }
 
         // ------------------------------------------------------------------
@@ -264,7 +494,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
                     || window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
                 target = liquidForm;
             } else {
-                newForm = window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+                newForm = this.findCartForm();
                 target = newForm;
             }
             if (!newForm || !target) return false;
@@ -586,23 +816,36 @@ if (typeof this.PrintAppShopify === 'undefined') {
         // customer-account UI extension's buttons. Seeds the per-product
         // storage entry exactly like the classic account page does, then
         // strips the params so refresh/share doesn't re-trigger.
+        //
+        // ?pa_open=1 — written by a collection card's button (mountCollection):
+        // the customer already chose to personalise, so the editor opens on
+        // arrival instead of waiting for a second click on this page.
         applyUrlHandoff() {
             let params;
             try { params = new URLSearchParams(window.location.search); } catch { return; }
 
+            const open = params?.get('pa_open') === '1';
+            if (open) this.model.autoShow = true;
+
             const projectId = params?.get('pa_project');
-            if (!projectId || !/^[a-zA-Z0-9_-]+$/.test(projectId)) return;
-            const action = params?.get('pa_action') === 'reorder' ? 'reorder' : 'resume';
+            const handoff = !!projectId && /^[a-zA-Z0-9_-]+$/.test(projectId);
+            if (!handoff && !open) return;
 
-            const store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
-            store[this.model.productId] = { projectId, action };
-            window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
+            if (handoff) {
+                const action = params?.get('pa_action') === 'reorder' ? 'reorder' : 'resume';
+                const store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
+                store[this.model.productId] = { projectId, action };
+                window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
+            }
 
+            params?.delete?.('pa_open');
             params?.delete?.('pa_project');
             params?.delete?.('pa_action');
-            const qs = params?.toString();
             try {
-                window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+                // Absolute: a relative path would resolve against any <base href>.
+                const url = new URL(window.location.href);
+                url.search = params?.toString() || '';
+                window.history.replaceState(null, '', url.href);
             } catch (e) { /* sandboxed contexts — cosmetic only */ }
         }
 
