@@ -58,6 +58,10 @@ const TARGETS = {
     bc: { file: "src/frameworks/bigcommerce.js", key: "js/bc.js" },
     sp: { file: "src/frameworks/shopify.js", key: "js/sp.js" },
     style: { file: "src/style.css", key: "css/style.css", type: "text/css" },
+    // The 3D scene viewer (three.js inside), loaded by client.js only for
+    // designs with a 3D Scene. Built in the FileCheck repo: in
+    // fc/filecheck/packages/stage run `npm run build` first.
+    scene: { file: "../../fc/filecheck/packages/stage/dist/standalone.js", key: "js/scene-viewer.js" },
     sample: { dir: "sample", prefix: "" }
 };
 

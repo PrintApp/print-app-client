@@ -595,19 +595,62 @@
 				if (this.model?.state?.mode === 'edit-project')
 					previews = previews.map(p => ({ ...p, url: `${p.url}${String(p.url).includes('?') ? '&' : '?'}r=${Math.random()}` }));
 
+				this.disposeScene();
 				previewBase.innerHTML =
 					`<div class="printapp-previews">
 						<div class="printapp-previews-main">
 							<img src="${previews[0].url}"/>
 						</div>
 						<div class="printapp-previews-thumbnails">
-							${(previews.length > 1) ? previews.map(p => `<div><img src="${p.url}" onclick="if (window.printAppInstance) window.printAppInstance.changeMainPreviewImage(this.src)"/></div>`).join('') : ''}
+							${(previews.length > 1) ? previews.map((p, i) => `<div><img src="${p.url}" onclick="if (window.printAppInstance) window.printAppInstance.changeMainPreviewImage(this.src, ${i})"/></div>`).join('') : ''}
 						</div>
 					</div>`;
+				// The design on its 3D Scene (the editor saved the scene's
+				// pages with the submit); the flat image stays until it's up.
+				const scene = this.model?.session?.scene;
+				if (scene?.spec && scene.pages?.length) this.showScene(previewBase.querySelector('.printapp-previews-main'), scene);
 			}
-			changeMainPreviewImage(newSrc) {
+			changeMainPreviewImage(newSrc, index) {
+				if (this.scene && Number.isInteger(index)) return this.scene.setPage(index + 1);
 				const mainImage = document.querySelector('.printapp-previews-main img');
 				if (mainImage) mainImage.src = newSrc;
+			}
+			/**
+			 * 3D gallery: the scene viewer (editor.print.app/js/scene-viewer.js,
+			 * three.js inside, loaded only for designs with a scene) in place of
+			 * the main preview image. Anything that stops it (no WebGL, a page
+			 * image that won't load) puts the image back.
+			 */
+			async showScene(main, scene) {
+				if (!main || !global.PrintAppClient.webgl()) return;
+				try {
+					const viewer = await global.PrintAppClient.loadSceneViewer();
+					if (!viewer?.mountScenePreview || !main.isConnected) return;
+					const box = document.createElement('div');
+					box.className = 'printapp-previews-scene';
+					const image = main.querySelector('img');
+					const handle = viewer.mountScenePreview(box, {
+						spec: scene.spec,
+						artworkMm: scene.artworkMm,
+						pages: scene.pages,
+						title: scene.title || '3D preview',
+					});
+					this.scene = handle;
+					main.classList.add('printapp-scene');
+					main.appendChild(box);
+					if (image) image.style.display = 'none';
+					handle.on('failed', () => {
+						if (this.scene === handle) this.disposeScene();
+						main.classList.remove('printapp-scene');
+						if (image) image.style.display = '';
+					});
+				} catch (e) {
+					console.warn('[print.app] 3D preview unavailable:', e?.message || e);
+				}
+			}
+			disposeScene() {
+				this.scene?.dispose();
+				this.scene = null;
 			}
 
 			appReady() {
@@ -1035,6 +1078,24 @@
 				return firstAvailable;
 			}
 
+			/** The 3D scene viewer (window.FilecheckStage), fetched once. */
+			static loadSceneViewer() {
+				if (window.FilecheckStage) return Promise.resolve(window.FilecheckStage);
+				return (this._sceneViewer ??= new Promise((resolve, reject) => {
+					const tag = document.createElement('script');
+					tag.async = true;
+					tag.onload = () => resolve(window.FilecheckStage);
+					tag.onerror = () => { this._sceneViewer = null; reject(new Error('scene viewer failed to load')); };
+					tag.src = `${this.ENDPOINTS.cdnBase}js/scene-viewer.js`;
+					(document.head || document.body).appendChild(tag);
+				}));
+			}
+			static webgl() {
+				try {
+					const canvas = document.createElement('canvas');
+					return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'));
+				} catch (e) { return false; }
+			}
 			static async loadTag(url, attrs = {}) {
 				return new Promise((resolve) => {
 					var tag;
