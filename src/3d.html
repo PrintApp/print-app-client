@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="robots" content="noindex">
+	<title>3D preview · Print.App</title>
+	<style>
+		html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+		#embed { position: fixed; inset: 0; }
+	</style>
+</head>
+<body>
+	<!-- The iframe embed: editor.print.app/3d.html?e=<embed id>. -->
+	<div id="embed"></div>
+	<script>
+		(function () {
+			var id = new URLSearchParams(location.search).get('e') || '';
+			if (/^view3d_[A-Za-z0-9]{10,40}$/.test(id)) document.getElementById('embed').setAttribute('data-printapp-3d', id);
+		})();
+	</script>
+	<script src="/js/scene-embed.js" async></script>
+</body>
+</html>

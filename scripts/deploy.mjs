@@ -62,6 +62,10 @@ const TARGETS = {
     // designs with a 3D Scene. Built in the FileCheck repo: in
     // fc/filecheck/packages/stage run `npm run build` first.
     scene: { file: "../../fc/filecheck/packages/stage/dist/standalone.js", key: "js/scene-viewer.js" },
+    // 3D embeds made in the admin's Scene Studio: the script-tag code, and
+    // the page the iframe code opens (3d.html?e=<embed id>).
+    embed: { file: "src/scene-embed.js", key: "js/scene-embed.js" },
+    embed3d: { file: "src/3d.html", key: "3d.html" },
     sample: { dir: "sample", prefix: "" }
 };
 
