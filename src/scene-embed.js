@@ -85,8 +85,12 @@
 		if (!ID.test(id || '')) return;
 		mounted.set(el, null);
 
-		if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
-		if (!el.clientHeight) css(el, { aspectRatio: el.style.aspectRatio || '1 / 1' });
+		const position = getComputedStyle(el).position;
+		if (position === 'static') el.style.position = 'relative';
+		// No height of its own: square, like an image would be. Not for a box
+		// that takes its size from its insets (the iframe page's full-window
+		// one), which reads 0 while its frame is still hidden.
+		if (!el.clientHeight && position !== 'fixed' && position !== 'absolute') css(el, { aspectRatio: el.style.aspectRatio || '1 / 1' });
 
 		let embed;
 		try {
