@@ -13,6 +13,9 @@
 				frameDomain: 'https://editor.print.app',
 			};
 
+			/** Auto add-to-cart: how long the adapters' save work may take. */
+			static ADD_TO_CART_WAIT_MS = 15000;
+
 			static SELECTORS = {
 				mini: '#main > div.row > div:nth-child(1),.single-product-thumbnail,#content > div > div.col-sm-8 > ul.thumbnails,.main > .left',
 				cartButton: '.single_add_to_cart_button,.kad_add_to_cart,.addtocart,#add-to-cart,.add_to_cart,#add,#AddToCart,#product-add-to-cart,#add_to_cart,#button-cart,#AddToCart-product-template,.product-details-wrapper .add-to-cart,.btn-addtocart,.ProductForm__AddToCart,.add_to_cart_product_page,#addToCart,[name="add"],[data-button-action="add-to-cart"],[data-action="add-to-cart"]',
@@ -486,6 +489,131 @@
 					}
 				}
 			}
+			/**
+			 * "Add to cart on save" (the design's addToCartOnSave setting):
+			 * the editor marks the save addToCart, and the store's own
+			 * add-to-cart is pressed for the customer once every app:saved
+			 * handler has settled — those are the adapters writing the
+			 * project into the cart form or posting it to the store's
+			 * backend. A failed handler means the cart line would go in
+			 * without its design, so the customer finishes by hand instead.
+			 */
+			async addToCartWhenSettled(adapterWork, data) {
+				try {
+					//	A store backend that never answers must not leave the
+					//	customer waiting on nothing: past the cap, they finish
+					//	by hand.
+					const capped = await Promise.race([
+						Promise.allSettled(adapterWork || []),
+						new Promise(resolve => setTimeout(() => resolve(null), global.PrintAppClient.ADD_TO_CART_WAIT_MS)),
+					]);
+					if (!capped || capped.some(result => result.status === 'rejected')) return this.askManualAdd();
+					await this.autoAddToCart(data);
+				} catch (e) {
+					console.error(e);
+				}
+			}
+
+			/**
+			 * A click, never form.submit(): cart drawers, upsell modals and
+			 * AJAX-add themes all hang off the button's click, so this behaves
+			 * exactly like the customer pressing it.
+			 *
+			 * Stores whose cart plugin needs something else can take over:
+			 * a `printapp:addtocart` listener (customJs is the usual place)
+			 * that calls preventDefault() gets the project and does the add
+			 * itself.
+			 *
+			 * Anything that blocks the add is left to block it — a variant
+			 * still to pick, required fields, another app's hold. Then the
+			 * customer is pointed at the button to finish there.
+			 */
+			async autoAddToCart(data) {
+				//	Resume + save again updates the SAME project in place, so
+				//	the cart line already added on this page shows the change;
+				//	a second press would add a duplicate line (AJAX carts and
+				//	drawers don't reload the page in between).
+				const projectId = data?.projectId || this.model.session?.projectId,
+					added = (this.model.act.autoAdded ??= new Set());
+				if (projectId && added.has(projectId)) return;
+
+				const takeover = new CustomEvent('printapp:addtocart', {
+					cancelable: true,
+					detail: { projectId, data },
+				});
+				if (!document.dispatchEvent(takeover)) return;
+
+				//	The button only just came back: the forceCustomization
+				//	display restore and the widget's hold release paint on the
+				//	next frame.
+				await new Promise(resolve => setTimeout(resolve, 50));
+
+				const button = this.findCartButton();
+				if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true')
+					return this.askManualAdd(button);
+
+				//	Only where the browser itself would validate: a real submit
+				//	button. AJAX themes use type="button" and never validate, so
+				//	a hidden required input another app left in the form must
+				//	not block us where the customer's own click goes through.
+				const form = button.form;
+				if (form && button.type === 'submit' && !form.noValidate && !button.formNoValidate
+						&& form.checkValidity && !form.checkValidity()) {
+					form.reportValidity?.();
+					return this.askManualAdd(button);
+				}
+
+				button.click();
+				if (projectId) added.add(projectId);
+
+				//	Platforms that can tell whether the line landed (Shopify
+				//	reads /cart.js) set confirmCartAdd. false = it didn't.
+				if (typeof this.confirmCartAdd !== 'function') return;
+				const landed = await this.confirmCartAdd(data);
+				if (landed === false) {
+					added.delete(projectId);
+					this.askManualAdd(button);
+				}
+			}
+
+			/**
+			 * The Print Options widget, when it is on the page, owns
+			 * add-to-cart. Otherwise the theme button we already hold — the
+			 * adapters hang their own click handlers on it — unless the theme
+			 * or a cart plugin has since swapped it out of the page.
+			 */
+			findCartButton() {
+				const widgetCta = this.options?.ready && this.options.el?.shadowRoot?.querySelector('[part="cta"]');
+				if (widgetCta) return widgetCta;
+				const held = this.model.ui.cartButton;
+				if (held?.isConnected && held.offsetParent) return held;
+				const selector = this.model.env?.settings?.cartButtonSelector || global.PrintAppClient.SELECTORS.cartButton;
+				const button = global.PrintAppClient.queryPrioritySelector(selector, true);
+				if (button) this.model.ui.cartButton = button;
+				return button || held;
+			}
+
+			/**
+			 * The design is saved but the add didn't go through: bring the
+			 * button into view with a note beside it. The note goes after the
+			 * widget itself when the button sits in its shadow root.
+			 */
+			askManualAdd(button = this.findCartButton()) {
+				const inShadow = typeof ShadowRoot !== 'undefined' && button?.getRootNode?.() instanceof ShadowRoot,
+					anchor = inShadow ? this.options?.el : button;
+				if (!anchor) return;
+				anchor.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+
+				document.getElementById('printapp-cart-note')?.remove();
+				const note = document.createElement('p');
+				note.id = 'printapp-cart-note';
+				note.className = 'printapp-cart-note';
+				note.setAttribute('role', 'status');
+				note.textContent = this.model.env.language?.add_to_cart_manual || 'Your design is saved. Press Add to Cart to finish your order.';
+				anchor.insertAdjacentElement('afterend', note);
+				button?.addEventListener('click', () => note.remove(), { once: true });
+			}
+
 			close() {
 				// proxy to closeApp...
 				this.closeApp();
@@ -721,7 +849,7 @@
 								message.data.mode = 'edit-project';
 
 							this.saved(message.data);
-							this.fire(message.event, message.data, true);
+							const adapterWork = this.fire(message.event, message.data, true);
 							// MINI display: the frame IS the product visual —
 							// collapsing it on save left a blank gallery (the
 							// mini mount replaced its contents, so there is no
@@ -735,6 +863,8 @@
 							this.setCommandPref();
 							this.handleCartBtn();
 							this.options?.onDesignSaved(message.data);
+							if (message.data?.addToCart && !message.data.saveForLater)
+								this.addToCartWhenSettled(adapterWork, message.data);
 						break;
 						case 'app:design:failed':
 							this.staleProject(message.data);
@@ -948,17 +1078,24 @@
 				}
 			}
 
+			/**
+			 * Returns what the handlers returned. app:saved waits on these
+			 * before an auto add-to-cart, so a handler that does async work
+			 * (posting the project to the store's backend, say) MUST return
+			 * its promise — fire-and-forget work races the cart click.
+			 */
 			fire (type, data, fromFrame) {
 				let handlers = this.handlers[type], i, len, invoked,
-					event = { type, data };
+					event = { type, data }, results = [];
 				if (handlers instanceof Array) {
 					handlers = handlers.concat();
 					for (i = 0, len = handlers.length; i < len; i++) {
-						handlers[i].call(this, event);
+						results.push(handlers[i].call(this, event));
 						invoked = true;
 					}
 				}
 				if (!invoked && !fromFrame) this.sendMsg(type, data);
+				return results;
 			}
 
 			manageCartPage() {

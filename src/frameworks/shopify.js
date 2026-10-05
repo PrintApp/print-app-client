@@ -210,6 +210,9 @@ if (typeof this.PrintAppShopify === 'undefined') {
             this.model.clientMounted = true;
             this.model.instance.on('app:saved', data => this.projectSaved(data));
             this.model.instance.on('app:project:reset', data => this.clearProject(data));
+            // Auto add-to-cart asks whether its click landed: the cart-button
+            // handler (setAddToCartAction) is already polling /cart.js for it.
+            this.model.instance.confirmCartAdd = () => this._confirmingAdd || undefined;
 
             setTimeout(() => {
                 if (currentValue.projectId && !isReorder) this.setAddToCartAction();
@@ -721,37 +724,46 @@ if (typeof this.PrintAppShopify === 'undefined') {
             cartButton.addEventListener('click', this._clearHandler);
 	    }
 
-        async confirmAddThenClear() {
+        /**
+         * Resolves true once the project is in the cart, false when it never
+         * showed up. A second call while polling gets the same promise — the
+         * client's auto add-to-cart (confirmCartAdd) waits on the poll the
+         * click itself started.
+         */
+        confirmAddThenClear() {
             const projectId = this.model.currentProjectId
                 || document.getElementById('_printapp')?.value
                 || (window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY) || {})[this.model.productId]?.projectId;
-            if (!projectId) return;
-            if (this._confirmingAdd) return; // a confirmation loop is already polling
-            this._confirmingAdd = true;
+            if (!projectId) return Promise.resolve(undefined);
+            if (this._confirmingAdd) return this._confirmingAdd;
 
             const landed = async () => {
                 const cart = await fetch('/cart.js').then(d => d.json()).catch(() => null);
                 return !!cart?.items?.some(item => item?.properties?.['_printapp'] === projectId);
             };
 
-            try {
-                // Poll at ~1.2s / 2.7s / 5.2s after the click; a blocked or failed
-                // add never confirms and the design is left untouched, so the
-                // customer can fix the validation and simply click again.
-                for (const wait of [1200, 1500, 2500]) {
-                    await new Promise(resolve => setTimeout(resolve, wait));
-                    if (await landed()) {
-                        // The cart now provably holds a customized item — remember
-                        // that before clearProject wipes the saved project, so
-                        // drawer previews keep arming on the following pages.
-                        window.PrintAppShopify.setCartFlag(true);
-                        this.clearProject({ projectId, keepInput: true });
-                        return;
+            this._confirmingAdd = (async () => {
+                try {
+                    // Poll at ~1.2s / 2.7s / 5.2s after the click; a blocked or failed
+                    // add never confirms and the design is left untouched, so the
+                    // customer can fix the validation and simply click again.
+                    for (const wait of [1200, 1500, 2500]) {
+                        await new Promise(resolve => setTimeout(resolve, wait));
+                        if (await landed()) {
+                            // The cart now provably holds a customized item — remember
+                            // that before clearProject wipes the saved project, so
+                            // drawer previews keep arming on the following pages.
+                            window.PrintAppShopify.setCartFlag(true);
+                            this.clearProject({ projectId, keepInput: true });
+                            return true;
+                        }
                     }
+                    return false;
+                } finally {
+                    this._confirmingAdd = null;
                 }
-            } finally {
-                this._confirmingAdd = false;
-            }
+            })();
+            return this._confirmingAdd;
         }
 
         // Classic customer accounts: the app embed loads this script on /account

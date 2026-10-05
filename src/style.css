@@ -342,3 +342,14 @@
         width: 100%;
     }
 }
+
+/* Auto add-to-cart could not finish: the note beside the cart button. */
+.printapp-cart-note {
+    margin: .5rem 0;
+    padding: .5rem .75rem;
+    border-radius: .375rem;
+    background: #fef3c7;
+    color: #78350f;
+    font-size: .875rem;
+    line-height: 1.4;
+}
