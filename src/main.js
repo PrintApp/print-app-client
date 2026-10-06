@@ -1451,6 +1451,7 @@
 				this.priceWatchers = [];
 				this.lastPrice = undefined;
 				this.items = null;
+				this.records = null;
 				this.canvas = null;
 				this.ready = false;
 				this.el = null;
@@ -1501,6 +1502,7 @@
 				const raw = {};
 				if (previewUrl) Object.assign(raw, { previewUrl, projectId: session.projectId });
 				if (this.items) raw.items = this.items;
+				if (this.records) raw.records = this.records;
 				if (Object.keys(raw).length) record.raw = raw;
 
 				this.el.setFile(record, { source: Bridge.SOURCE });
@@ -1561,6 +1563,11 @@
 				//	Transfers by size: the per-design breakdown (display /
 				//	production ticket only - it rides record.raw, never priced).
 				this.items = Array.isArray(data?.items) && data.items.length ? data.items : null;
+				//	Mail merge: how many rows (copies) the job carries. The
+				//	editor already set the quantity field to it when the rows
+				//	and the quantity are linked; this is for display and the
+				//	production ticket (record.raw), never priced.
+				this.records = Number.isFinite(data?.records) && data.records > 0 ? data.records : null;
 				this.publishDesign();
 				this.release();
 				this.applyForceCustomization();
