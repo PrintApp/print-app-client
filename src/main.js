@@ -942,6 +942,20 @@
 						}
 					break;
 					case 'INPUT':
+						//	A radio group (Shopify Dawn's swatches and pills, addressed as
+						//	`input[name="Color"]:checked`): the selector resolves to the CHECKED
+						//	radio, and writing its value RENAMED that option ("Black" became
+						//	"White") and switched the variant. Select the radio that carries the
+						//	value instead, and only when it isn't already selected.
+						if (element.type === 'radio') {
+							const radio = global.PrintAppClient.radioFor(element, data.value);
+							if (radio && !radio.checked) {
+								radio.checked = true;
+								radio.dispatchEvent(new window.Event('input', { bubbles: true }));
+								radio.dispatchEvent(new window.Event('change', { bubbles: true }));
+							}
+							break;
+						}
 						element.value = data.value;
 						element.dispatchEvent(new window.Event('input', { bubbles: true }));
 						element.dispatchEvent(new window.Event('change', { bubbles: true }));
@@ -1013,6 +1027,30 @@
 						});
 					});
 					observer.observe(element, { childList: true, characterData: true, subtree: true });
+					return;
+				}
+				//	A radio group: listen to the whole group, by name, on the document. The
+				//	element found above is just the radio checked right now; a radio fires
+				//	`change` only when it becomes checked (never when it is left), and themes
+				//	re-render their variant pickers on every change, so a listener on it went
+				//	deaf after the first pick. Once per group and connector.
+				if (element.tagName === 'INPUT' && element.type === 'radio' && element.name) {
+					const key = `${element.name}|${data.callbackEvent}|${JSON.stringify(data.callbackData || {})}`;
+					this.model.state._radioHooks ??= new Set();
+					if (this.model.state._radioHooks.has(key)) return;
+					this.model.state._radioHooks.add(key);
+					document.addEventListener('change', evt => {
+						const target = evt.target;
+						if (!target || target.tagName !== 'INPUT' || target.type !== 'radio') return;
+						if (target.name !== element.name || !target.checked) return;
+						if (this.model.state._pauseDispatch) return;
+						this.sendMsg(data.callbackEvent, {
+							selector: data.selector,
+							...elementValues(target),
+							event: 'change',
+							callbackData: data.callbackData,
+						});
+					});
 					return;
 				}
 				const eventType = (element.tagName === 'BUTTON') ? 'click' : 'change';
@@ -1188,6 +1226,14 @@
 						regex = /[?&](variation|variant)=([^&]*)/i;
 				let match = search.match(regex);
 				return match ? match[2] : undefined;
+			}
+
+			/** The radio in `radio`'s group (same name, same form or document) whose value
+			 *  is `value`, or null. */
+			static radioFor(radio, value) {
+				const scope = radio.form || radio.ownerDocument || document;
+				return [...scope.querySelectorAll('input[type="radio"]')]
+					.find(input => input.name === radio.name && input.value === String(value)) || null;
 			}
 
 			static queryPrioritySelector(selectors, visible) {
