@@ -46,6 +46,8 @@ if (typeof this.PrintAppShopify === 'undefined') {
 
             if (this.model.cartPage) {
                 await this.setCartImages();
+                // Where a Print Options configurator lands after adding.
+                if (this._cartData?.items) this.forgetProjectsInCart(this._cartData.items);
                 // The floating drawer can be opened on the cart page too — keep it in sync.
                 if (this._cartData?.items?.some(item => item?.properties?.['_printapp'])) this.armDrawerPreviews();
                 return;
@@ -134,6 +136,10 @@ if (typeof this.PrintAppShopify === 'undefined') {
             await window.PrintAppShopify.loadTag(`${window.PrintAppShopify.ENDPOINTS.baseCdn}js/client.js`);
 
             if (this.model.clientMounted || typeof PrintAppClient !== 'function') return;
+
+            // A design already in the cart is finished: this visit starts a
+            // new one instead of resuming it.
+            await this.forgetIfInCart();
 
             let titleTag = document.querySelector('[property="og:title"]');
             if (titleTag) this.model.title = titleTag.getAttribute('content');
@@ -677,6 +683,50 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 window.location.reload();
             }, 3e3);
         }
+        /**
+         * Saved projects that are already in the cart are done with: the next
+         * visit to their product page must offer a new design, not "Resume"
+         * the ordered one and attach its id to a second line.
+         *
+         * The theme's cart button clears its project once the add is
+         * confirmed (setAddToCartAction -> confirmAddThenClear). A Print
+         * Options configurator adds through its own button and goes straight
+         * to /cart, so nothing ever cleared it (2026-10-23). Checking the cart
+         * itself covers every way a line gets there. Account and URL handoffs
+         * (`action`: resume / reorder) stay: the customer asked for them.
+         * Returns true when something was forgotten.
+         */
+        forgetProjectsInCart(items) {
+            const inCart = new Set((items || []).map(item => item?.properties?.['_printapp']).filter(Boolean));
+            if (!inCart.size) return false;
+
+            const   store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY),
+                    projects = window.PrintAppShopify.getStorage(window.PrintAppShopify.PROJECTSKEY);
+            let forgotten = false;
+            for (const [productId, entry] of Object.entries(store || {})) {
+                if (!entry?.projectId || entry.action || !inCart.has(entry.projectId)) continue;
+                delete store[productId];
+                delete projects[entry.projectId];
+                forgotten = true;
+            }
+            if (!forgotten) return false;
+
+            // Same as confirmAddThenClear: the cart provably holds a
+            // customized item, so drawer previews keep arming.
+            window.PrintAppShopify.setCartFlag(true);
+            window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
+            window.localStorage.setItem(window.PrintAppShopify.PROJECTSKEY, JSON.stringify(projects));
+            return true;
+        }
+
+        /** Product page: one /cart.js read, and only when this product has a saved project. */
+        async forgetIfInCart() {
+            const entry = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY)?.[this.model.productId];
+            if (!entry?.projectId || entry.action) return false;
+            const cart = await fetch('/cart.js').then(d => d.json()).catch(() => null);
+            return cart?.items ? this.forgetProjectsInCart(cart.items) : false;
+        }
+
         projectSaved(value) {
             const { data } = value;
             this.model.currentProjectId = data.projectId;
