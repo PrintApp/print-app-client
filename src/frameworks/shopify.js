@@ -248,8 +248,51 @@ if (typeof this.PrintAppShopify === 'undefined') {
                     .filter(form => form.querySelector('input[name="product-id"]')?.value === pageProductId && form.offsetParent);
                 const visible = own.find(form => form.offsetWidth > 0 && form.offsetHeight > 0) || own[0];
                 if (visible) return visible;
+                // No form for this product, but Print Options sells it: some
+                // other form on the page (a recommendations quick-add) would
+                // hang the editor on the wrong product.
+                const holder = this.configuratorForm(pageProductId);
+                if (holder) return holder;
             }
             return window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+        }
+
+        /**
+         * A form of our own beside the Print Options configurator.
+         *
+         * A product template can carry the configurator alone: it owns
+         * add-to-cart (at its verified price), so merchants remove the theme's
+         * buy buttons to avoid a second button. Without a cart form we never
+         * mounted, and the configurator never offered the designer (support
+         * case, FolieFabrik, 2026-10-20). Print Options' loader forwards the
+         * properties[...] inputs of the product's cart form to the line it
+         * adds, so this form only has to exist: it holds our hidden inputs and
+         * the #pa-buttons mount, and is never submitted. Not `hidden` — in
+         * artwork mode our own buttons are the only route to the editor.
+         */
+        configuratorForm(productId) {
+            const widget = document.querySelector('print-configurator');
+            if (!widget || !productId) return null;
+
+            const existing = document.getElementById('printapp-options-form');
+            if (existing) return existing;
+
+            const form = document.createElement('form');
+            form.id = 'printapp-options-form';
+            form.setAttribute('action', '/cart/add');
+            form.setAttribute('method', 'post');
+            // Enter in one of our inputs must not post a cart add with no variant.
+            form.addEventListener('submit', event => event.preventDefault());
+
+            const id = document.createElement('input');
+            id.type = 'hidden';
+            id.name = 'product-id';
+            id.value = productId;
+            form.appendChild(id);
+
+            const anchor = widget.closest('.shopify-print-configurator-wrapper') || widget;
+            anchor.insertAdjacentElement('afterend', form);
+            return form;
         }
 
         // ------------------------------------------------------------------
