@@ -5,7 +5,8 @@
  *   <script src="https://editor.print.app/js/scene-embed.js" async></script>
  *
  * data-background="transparent" (or a hex colour) on the element overrides
- * the embed's background, so one embed can sit on differently coloured pages.
+ * the embed's background, so one embed can sit on differently coloured pages;
+ * data-hints="off" hides the "Click to turn over" hints.
  *
  * Every element with data-printapp-3d (also ones added later) gets the
  * embed the admin saved in the Scene Studio: the scene, its sample art, the
@@ -118,6 +119,7 @@
 				cameraState: embed.camera,
 				autoSpin: embed.options?.autoSpin !== false,
 				views: embed.options?.views !== false,
+				hints: embed.options?.hints !== false && el.getAttribute('data-hints') !== 'off',
 				background: bg && bg !== 'scene' ? bg : undefined,
 				title: embed.title || '3D preview',
 				ui: true,
