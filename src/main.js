@@ -1705,6 +1705,12 @@
 			read(field, axis) {
 				const value = this.el?.state?.selections?.[field.id];
 
+				//	A count per option (a size run): what a quantity connector
+				//	means is the job's total, not the map of counts per size.
+				if (field.type === 'quantities') {
+					return { value: this.el?.state?.quantity ?? 0, type: 'quantity' };
+				}
+
 				if (field.type === 'dimensions') {
 					const dims = value && typeof value === 'object' ? value : {};
 					return {
@@ -1903,6 +1909,10 @@
 						if (id) write(id);
 						return;
 					}
+					case 'quantities':
+						//	A total cannot say which sizes changed: the customer
+						//	sets the counts (the mail-merge quantity link included).
+						return;
 					default:
 						//	file fields are answered by producers, never written to.
 						return;
