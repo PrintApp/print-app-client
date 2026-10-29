@@ -16,6 +16,9 @@
 			/** Auto add-to-cart: how long the adapters' save work may take. */
 			static ADD_TO_CART_WAIT_MS = 15000;
 
+			/** Boot watchdog: how long each handshake step may stay silent before the console says so. */
+			static BOOT_WARN_MS = 10000;
+
 			static SELECTORS = {
 				mini: '#main > div.row > div:nth-child(1),.single-product-thumbnail,#content > div > div.col-sm-8 > ul.thumbnails,.main > .left',
 				cartButton: '.single_add_to_cart_button,.kad_add_to_cart,.addtocart,#add-to-cart,.add_to_cart,#add,#AddToCart,#product-add-to-cart,#add_to_cart,#button-cart,#AddToCart-product-template,.product-details-wrapper .add-to-cart,.btn-addtocart,.ProductForm__AddToCart,.add_to_cart_product_page,#addToCart,[name="add"],[data-button-action="add-to-cart"],[data-action="add-to-cart"]',
@@ -152,8 +155,18 @@
 			}
 			makeFrame() {
 				let frame = document.createElement('iframe');
+				//	The editor learns who embedded it from its referrer: it posts
+				//	its handshake to that origin and checks the hostname against
+				//	the domain. A page sending Referrer-Policy: no-referrer or
+				//	same-origin (Django's and helmet's defaults) left it empty,
+				//	and the editor booted and said nothing at all: no validation
+				//	event, no app:ready (merchant report, 2026-10-28). The
+				//	attribute outranks the page's policy for this one request,
+				//	and the editor never needed more than the origin.
+				frame.referrerPolicy = 'strict-origin';
 				frame.src = `${global.PrintAppClient.ENDPOINTS.cdnBase}${this.editorPath()}index.html`;
 				frame.title = 'Print.App';
+				frame.addEventListener('load', () => this.watchBoot());
 				frame.classList.add('printapp-frame');
 				//	INLINE, not stylesheet: the frame is mounted before the CDN
 				//	stylesheet arrives, and until then it renders as a raw
@@ -626,6 +639,7 @@
 				this.unlockScroll();
 				this.options?.dispose();
 				window.removeEventListener('message', this.onMessage);
+				clearTimeout(this.model.act.bootTimer);
 				this.model.ui.frame.remove();
 				this.fire('app:after:destroy');
 			}
@@ -795,6 +809,43 @@
 				}
 			}
 
+			/**
+			 * A frame that loads and then stays silent is the one failure the
+			 * page cannot see: no validation event, no app:ready, no error.
+			 * Each frame load (the engine handoff to /pfx/ is a second one)
+			 * re-arms it. Say which step stalled, so whoever opens the
+			 * console knows where to look.
+			 *
+			 * Counted, not ordered: the announce often lands BEFORE the
+			 * frame's load event (anything still loading holds load back),
+			 * and validation can too. A document that already announced
+			 * must not get a "has not responded" warning after the fact.
+			 */
+			watchBoot() {
+				const act = this.model.act;
+				act.loads = (act.loads || 0) + 1;
+				if ((act.announces || 0) >= act.loads) return;
+				clearTimeout(act.bootTimer);
+				act.bootTimer = setTimeout(() => console.warn(
+					`[Print.App] The editor frame loaded but has not responded after ${global.PrintAppClient.BOOT_WARN_MS / 1000}s. ` +
+					'It sends its first message to the origin in its referrer: a browser setting or privacy extension that strips referrers stops it, ' +
+					'as does an extension or content filter blocking editor.print.app. ' +
+					'Switch the DevTools console to the editor.print.app frame to see its own errors.'
+				), global.PrintAppClient.BOOT_WARN_MS);
+			}
+
+			/** The editor answered; now it has to reach our servers to validate. */
+			watchValidation() {
+				const act = this.model.act;
+				act.announces = (act.announces || 0) + 1;
+				clearTimeout(act.bootTimer);
+				act.bootTimer = setTimeout(() => console.warn(
+					`[Print.App] The editor started but has not validated after ${global.PrintAppClient.BOOT_WARN_MS / 1000}s. ` +
+					'It validates over a WebSocket to Print.App\'s servers: check the editor.print.app frame\'s network requests for a blocked WebSocket ' +
+					'(proxies and security software can block them).'
+				), global.PrintAppClient.BOOT_WARN_MS);
+			}
+
 			validationComplete() {
 				this.handleCartBtn()
 				if (this.model.env.settings.displayMode === 'mini') this.showApp();
@@ -831,6 +882,7 @@
 						case global.PrintAppClient.EDITOR_NAME:
 							this.model.ui.messageSource = event.source;
 							this.sendMsg(global.PrintAppClient.NAME, this.model.env);
+							this.watchValidation();
 							// The customer clicked while the editor was still
 							// booting — deliver the show it missed.
 							if (this.model.act.pendingShow) {
@@ -880,11 +932,13 @@
 							this.fire(message.event, message.data, true);
 						break;
 						case 'app:validation:success':
+							clearTimeout(this.model.act.bootTimer);
 							this.model.settings = message.data.settings;
 							this.fire(message.event, message.data, true);
 							this.validationComplete()
 						break;
 						case 'app:validation:failed':
+							clearTimeout(this.model.act.bootTimer);
 							this.unload(message.data);
 							this.fire(message.event, message.data, true);
 						break;
