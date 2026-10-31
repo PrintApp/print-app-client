@@ -44,6 +44,22 @@
 				designs: new Map(),
 				projects: new Map(),
 				isMobile: window.innerWidth < 1024,
+				//	How far the editor frame got (getBootStatus). Counts and
+				//	timings only, never keys, settings or message payloads.
+				boot: {
+					t0: Date.now(),
+					settings: 'pending',
+					frame: { inserted: false, src: '', referrerPolicy: '' },
+					loads: 0,
+					announces: 0,
+					configsSent: 0,
+					validations: 0,
+					validation: null,
+					validationReason: null,
+					readies: 0,
+					stalled: null,
+					elapsed: {},
+				},
 			};
 
 			constructor(params) {
@@ -80,11 +96,25 @@
 					const 	designId = this.model.env.designId || this.model.env.designList?.[0]?.id,
 							domainKey = this.model.env.domainKey;
 
-					const response = await window.fetch(`${global.PrintAppClient.ENDPOINTS.runBase}${domainKey}/*/?designId=${designId}&required=settings&lang=${this.model.env?.langCode || this.model.langCode}`);
-					if (response.ok) {
-						const data = await response.json();
-						({ settings: this.model.env.settings, language: this.model.env.language } = data || {});
+					//	A fetch that cannot reach run.print.app (DNS, a filter)
+					//	used to throw here and take the whole client with it: no
+					//	frame, no event, nothing in the console. The editor gets
+					//	its settings again when it validates, so carry on with
+					//	the defaults and say so.
+					let settings = 'unavailable';
+					try {
+						const response = await window.fetch(`${global.PrintAppClient.ENDPOINTS.runBase}${domainKey}/*/?designId=${designId}&required=settings&lang=${this.model.env?.langCode || this.model.langCode}`);
+						if (response.ok) {
+							const data = await response.json();
+							({ settings: this.model.env.settings, language: this.model.env.language } = data || {});
+							settings = 'loaded';
+						}
+					} catch (e) {
+						console.warn(`[Print.App] Could not load the store settings from ${global.PrintAppClient.ENDPOINTS.runBase} (${e?.message || e}); continuing with defaults.`);
 					}
+					this.bootStep('settings', { settings });
+				} else {
+					this.bootStep('settings', { settings: 'passed' });
 				}
 				this.model.env.settings ??= {};
 				//	A page that boots with a project id (the store remembered
@@ -127,6 +157,12 @@
 				this.model.ui.frame = this.makeFrame();
 				this.setMainDiv();
 				this.handleDisplayMode();
+				this.bootStep('frameInserted', { frame: {
+					inserted: this.model.ui.frame.isConnected,
+					src: this.model.ui.frame.src,
+					referrerPolicy: this.model.ui.frame.referrerPolicy,
+				} });
+				this.watchFrame();
 				this.createCommandUI();
 				this.model.ui.cartButton = global.PrintAppClient.queryPrioritySelector(this.model.env?.settings?.cartButtonSelector || global.PrintAppClient.SELECTORS.cartButton, true);
 				this.model.act.uiCreated = true;
@@ -822,28 +858,93 @@
 			 * must not get a "has not responded" warning after the fact.
 			 */
 			watchBoot() {
-				const act = this.model.act;
-				act.loads = (act.loads || 0) + 1;
-				if ((act.announces || 0) >= act.loads) return;
-				clearTimeout(act.bootTimer);
-				act.bootTimer = setTimeout(() => console.warn(
-					`[Print.App] The editor frame loaded but has not responded after ${global.PrintAppClient.BOOT_WARN_MS / 1000}s. ` +
+				const boot = this.model.boot;
+				this.bootStep('frameLoaded', { loads: boot.loads + 1, stalled: null });
+				if (boot.announces >= boot.loads) return;
+				this.stall('announce',
+					`The editor frame loaded but has not responded after ${global.PrintAppClient.BOOT_WARN_MS / 1000}s. ` +
 					'It sends its first message to the origin in its referrer: a browser setting or privacy extension that strips referrers stops it, ' +
 					'as does an extension or content filter blocking editor.print.app. ' +
 					'Switch the DevTools console to the editor.print.app frame to see its own errors.'
-				), global.PrintAppClient.BOOT_WARN_MS);
+				);
+			}
+
+			/** The frame is in the page; its editor page has to load. A DNS failure never fires load at all. */
+			watchFrame() {
+				this.stall('load',
+					`The editor page has not loaded after ${global.PrintAppClient.BOOT_WARN_MS / 1000}s. ` +
+					'Check that editor.print.app resolves and is reachable from this network: DNS, a proxy or a content filter can stop it.'
+				);
 			}
 
 			/** The editor answered; now it has to reach our servers to validate. */
 			watchValidation() {
-				const act = this.model.act;
-				act.announces = (act.announces || 0) + 1;
-				clearTimeout(act.bootTimer);
-				act.bootTimer = setTimeout(() => console.warn(
-					`[Print.App] The editor started but has not validated after ${global.PrintAppClient.BOOT_WARN_MS / 1000}s. ` +
+				const boot = this.model.boot;
+				this.bootStep('announced', { announces: boot.announces + 1, stalled: null });
+				this.stall('validation',
+					`The editor started but has not validated after ${global.PrintAppClient.BOOT_WARN_MS / 1000}s. ` +
 					'It validates over a WebSocket to Print.App\'s servers: check the editor.print.app frame\'s network requests for a blocked WebSocket ' +
 					'(proxies and security software can block them).'
-				), global.PrintAppClient.BOOT_WARN_MS);
+				);
+			}
+
+			/** Arm the watchdog for the next step: the console and the status report the same stall. */
+			stall(step, message) {
+				const act = this.model.act;
+				clearTimeout(act.bootTimer);
+				const timer = act.bootTimer = setTimeout(async () => {
+					//	A host that does not resolve still "loads": the frame
+					//	gets the browser's own error page and fires load like
+					//	any other. Ask the network once, so a DNS failure is not
+					//	reported as a silent editor.
+					if (step === 'announce' && !(await this.editorReachable())) {
+						step = 'unreachable';
+						message = `The editor frame shows the browser's error page: ${this.model.ui.frame.src} did not answer from this page. ` +
+							'Check that editor.print.app resolves and is reachable from this network: DNS, a proxy, a content filter or this page\'s Content-Security-Policy can stop it.';
+					}
+					//	The boot moved on (or the frame went) while we asked.
+					if (timer !== act.bootTimer || !this.model.ui.frame?.isConnected) return;
+					this.bootStep('stalled', { stalled: step });
+					console.warn(`[Print.App] ${message}`);
+				}, global.PrintAppClient.BOOT_WARN_MS);
+			}
+
+			/** Whether the editor's host answers this page at all. An opaque reply is enough. */
+			async editorReachable() {
+				try {
+					await window.fetch(this.model.ui.frame.src, { mode: 'no-cors', cache: 'no-store' });
+					return true;
+				} catch (e) {
+					return false;
+				}
+			}
+
+			/**
+			 * How far the editor frame got, for a page that needs to tell a
+			 * stalled boot from a slow one. One editor page is one load, one
+			 * announce, one validation and one ready; the handoff to /pfx/ is a
+			 * second page, so the counters can reach 2. Counts and timings only:
+			 * a page can log it, or send it to us, as it is.
+			 */
+			getBootStatus() {
+				const 	{ t0, ...boot } = this.model.boot,
+						page = Math.max(boot.loads, boot.announces);
+				const stage = boot.validation === 'failed' ? 'failed'
+					: !boot.frame.inserted ? 'settings'
+					: !page ? 'loading'
+					: boot.readies >= page ? 'ready'
+					: boot.validations >= page ? 'validated'
+					: boot.announces >= page ? 'announced'
+					: 'loaded';
+				return JSON.parse(JSON.stringify({ startedAt: new Date(t0).toISOString(), stage, ...boot }));
+			}
+
+			/** Record a boot step (ms since construction) and tell any app:boot:status listener. */
+			bootStep(step, changes = {}) {
+				const boot = this.model.boot;
+				Object.assign(boot, changes);
+				boot.elapsed[step] = Date.now() - boot.t0;
+				this.fire('app:boot:status', this.getBootStatus(), true);
 			}
 
 			validationComplete() {
@@ -881,8 +982,9 @@
 					switch (message.event) {
 						case global.PrintAppClient.EDITOR_NAME:
 							this.model.ui.messageSource = event.source;
-							this.sendMsg(global.PrintAppClient.NAME, this.model.env);
 							this.watchValidation();
+							if (this.sendMsg(global.PrintAppClient.NAME, this.model.env))
+								this.bootStep('configSent', { configsSent: this.model.boot.configsSent + 1 });
 							// The customer clicked while the editor was still
 							// booting — deliver the show it missed.
 							if (this.model.act.pendingShow) {
@@ -891,6 +993,7 @@
 							}
 						break;
 						case 'app:ready':
+							this.bootStep('ready', { readies: this.model.boot.readies + 1 });
 							this.appReady();
 							this.fire(message.event, message.data, true);
 						break;
@@ -933,12 +1036,15 @@
 						break;
 						case 'app:validation:success':
 							clearTimeout(this.model.act.bootTimer);
+							this.bootStep('validated', { validations: this.model.boot.validations + 1, validation: 'success', validationReason: null, stalled: null });
 							this.model.settings = message.data.settings;
 							this.fire(message.event, message.data, true);
 							this.validationComplete()
 						break;
 						case 'app:validation:failed':
 							clearTimeout(this.model.act.bootTimer);
+							//	The editor's reason is a short code ('domain mismatch'); anything else stays out of the status.
+							this.bootStep('validated', { validation: 'failed', validationReason: typeof message.data === 'string' ? message.data.slice(0, 80) : null, stalled: null });
 							this.unload(message.data);
 							this.fire(message.event, message.data, true);
 						break;
