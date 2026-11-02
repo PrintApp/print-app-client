@@ -164,9 +164,14 @@
 				} });
 				this.watchFrame();
 				this.createCommandUI();
-				this.model.ui.cartButton = global.PrintAppClient.queryPrioritySelector(this.model.env?.settings?.cartButtonSelector || global.PrintAppClient.SELECTORS.cartButton, true);
 				this.model.act.uiCreated = true;
+				//	The store's custom CSS/JS before the cart button lookup: the
+				//	lookup only takes a VISIBLE button, and a store whose theme CSS
+				//	hides it and whose Print.App CSS shows it again left us holding
+				//	nothing — Customization Required then never held the button
+				//	back (support request, 2026-11-02).
 				this.runCustomScripts();
+				this.model.ui.cartButton = global.PrintAppClient.queryPrioritySelector(this.model.env?.settings?.cartButtonSelector || global.PrintAppClient.SELECTORS.cartButton, true);
 				this.fire('ui:created');
 			}
 			/**
@@ -528,14 +533,28 @@
 				this.fire('app:after:show');
 			}
 
+			/**
+			 * Customization Required: no cart button until there is a design.
+			 * Hidden with !important, because a stylesheet that forces the
+			 * button on with !important (often the store's own Print.App CSS,
+			 * undoing a theme that hides it) beats a plain inline style. On
+			 * the way back the button gets exactly the inline display it had.
+			 */
 			handleCartBtn() {
-				if (this.model?.env?.settings?.forceCustomization && this.model.ui.cartButton) {
-					if (this.model.state.mode === 'new-project') {
-						if (this.model.ui.cartButton.style.display != 'none') this.model.ui.cartButtonStyle = this.model.ui.cartButton.style.display;
-						this.model.ui.cartButton.style.display = 'none';
-					} else {
-						this.model.ui.cartButton.style.display = this.model.ui.cartButtonStyle || 'block';
-					}
+				const button = this.model.ui.cartButton;
+				if (!this.model?.env?.settings?.forceCustomization || !button) return;
+				if (this.model.state.mode === 'new-project') {
+					if (!this.model.ui.cartButtonStyle) this.model.ui.cartButtonStyle = {
+						value: button.style.getPropertyValue('display'),
+						priority: button.style.getPropertyPriority('display'),
+					};
+					button.style.setProperty('display', 'none', 'important');
+				} else if (this.model.ui.cartButtonStyle) {
+					const { value, priority } = this.model.ui.cartButtonStyle;
+					//	A theme that had hidden it inline still gets it shown.
+					if (value && value !== 'none') button.style.setProperty('display', value, priority);
+					else button.style.removeProperty('display');
+					this.model.ui.cartButtonStyle = null;
 				}
 			}
 			/**
