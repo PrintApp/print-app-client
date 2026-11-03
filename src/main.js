@@ -1556,6 +1556,8 @@
 			pending = [];
 			/** Kept so dispose() can take them off the widget again. */
 			listeners = [];
+			/** fieldId -> { w, h, unit }: the last size the editor sent per axis. */
+			sentDims = new Map();
 
 			constructor(client) {
 				this.client = client;
@@ -2080,7 +2082,18 @@
 						const unit = current.unit || field.defaultUnit || 'mm';
 						const next = data.unit ? Bridge.convert(number, data.unit, unit) : number;
 						if (!axis) return;
-						write({ w: axis === 'w' ? next : current.w, h: axis === 'h' ? next : current.h, unit });
+						//	The editor sends one axis per message, and the widget refuses
+						//	a size with a side missing — so an empty field (no default
+						//	size) took neither half. The other side comes from the widget
+						//	when it has one, else from what the editor last sent for it.
+						const other = axis === 'w' ? 'h' : 'w';
+						const sent = this.sentDims.get(field.id) || {};
+						this.sentDims.set(field.id, { ...sent, [axis]: next, unit });
+						const otherValue = Number.isFinite(current[other]) ? current[other]
+								: Number.isFinite(sent[other]) ? Bridge.convert(sent[other], sent.unit, unit)
+								: null;
+						if (otherValue === null) return;
+						write({ [axis]: next, [other]: otherValue, unit });
 						return;
 					}
 					case 'quantity':
