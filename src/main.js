@@ -172,6 +172,12 @@
 				//	back (support request, 2026-11-02).
 				this.runCustomScripts();
 				this.model.ui.cartButton = global.PrintAppClient.queryPrioritySelector(this.model.env?.settings?.cartButtonSelector || global.PrintAppClient.SELECTORS.cartButton, true);
+				//	Held from the start, not from validation: a cold editor took
+				//	over 10s to validate, and the button sat there clickable the
+				//	whole time (merchant report, 2026-11-03). A failed or stalled
+				//	boot gives it back (releaseCartBtn), so a broken editor
+				//	never stops a sale.
+				this.handleCartBtn();
 				this.fire('ui:created');
 			}
 			/**
@@ -549,13 +555,17 @@
 						priority: button.style.getPropertyPriority('display'),
 					};
 					button.style.setProperty('display', 'none', 'important');
-				} else if (this.model.ui.cartButtonStyle) {
-					const { value, priority } = this.model.ui.cartButtonStyle;
-					//	A theme that had hidden it inline still gets it shown.
-					if (value && value !== 'none') button.style.setProperty('display', value, priority);
-					else button.style.removeProperty('display');
-					this.model.ui.cartButtonStyle = null;
-				}
+				} else this.releaseCartBtn();
+			}
+			/** The cart button back exactly as handleCartBtn found it. */
+			releaseCartBtn() {
+				const button = this.model.ui.cartButton;
+				if (!button || !this.model.ui.cartButtonStyle) return;
+				const { value, priority } = this.model.ui.cartButtonStyle;
+				//	A theme that had hidden it inline still gets it shown.
+				if (value && value !== 'none') button.style.setProperty('display', value, priority);
+				else button.style.removeProperty('display');
+				this.model.ui.cartButtonStyle = null;
 			}
 			/**
 			 * "Add to cart on save" (the design's addToCartOnSave setting):
@@ -695,6 +705,7 @@
 				this.options?.dispose();
 				window.removeEventListener('message', this.onMessage);
 				clearTimeout(this.model.act.bootTimer);
+				this.releaseCartBtn();
 				this.model.ui.frame.remove();
 				this.fire('app:after:destroy');
 			}
@@ -921,8 +932,12 @@
 						message = `The editor frame shows the browser's error page: ${this.model.ui.frame.src} did not answer from this page. ` +
 							'Check that editor.print.app resolves and is reachable from this network: DNS, a proxy, a content filter or this page\'s Content-Security-Policy can stop it.';
 					}
-					//	The boot moved on (or the frame went) while we asked.
-					if (timer !== act.bootTimer || !this.model.ui.frame?.isConnected) return;
+					//	The boot moved on while we asked.
+					if (timer !== act.bootTimer) return;
+					//	No editor to design in: the customer can still buy. A late
+					//	validation holds the button again.
+					this.releaseCartBtn();
+					if (!this.model.ui.frame?.isConnected) return;
 					this.bootStep('stalled', { stalled: step });
 					console.warn(`[Print.App] ${message}`);
 				}, global.PrintAppClient.BOOT_WARN_MS);
@@ -1253,6 +1268,7 @@
 				//	its scrolling back and the widget must stop listening to us.
 				this.unlockScroll();
 				this.options?.dispose();
+				this.releaseCartBtn();
 				if (this.model.ui.frame && this.model.ui.frame.parentNode) {
 					this.model.ui.frame.parentNode.removeChild(this.model.ui.frame);
 				}
