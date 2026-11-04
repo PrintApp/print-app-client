@@ -2065,7 +2065,18 @@
 				//	slot we published IS a removal: clear exactly as our own
 				//	Clear button does, which also lets the framework forget
 				//	the stored project.
-				if (this.published && changed.includes('file') && !detail.file) {
+				//	A widget that reports each field's own file (`files`) can hold a
+				//	thesis PDF AND our cover on one product, and the priced `file` is
+				//	then the PDF: removing it, or Filecheck resetting its intake, must
+				//	not clear the cover. Only our own record leaving is a removal.
+				//	Older widgets have one slot, so its emptying still is.
+				const SOURCE = global.PrintAppClient.OptionsBridge.SOURCE;
+				const perField = detail.files && typeof detail.files === 'object';
+				const moved = changed.includes(perField ? 'files' : 'file');
+				const ours = perField
+					? Object.values(detail.files).some(record => record?.source === SOURCE)
+					: !!detail.file;
+				if (this.published && moved && !ours) {
 					this.published = false;
 					this.client.clearDesign();
 					return;
