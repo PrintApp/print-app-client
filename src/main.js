@@ -557,6 +557,23 @@
 					button.style.setProperty('display', 'none', 'important');
 				} else this.releaseCartBtn();
 			}
+			/**
+			 * The theme replaced the cart button on its own: a variant change
+			 * re-renders the add-to-cart block, and the new button showed while
+			 * we held the old one, now off the page (merchant report,
+			 * 2026-11-04). Take the new one, held if the old one was.
+			 */
+			rebindCartButton() {
+				const held = this.model.ui.cartButton;
+				if (!held || held.isConnected) return false;
+				const button = global.PrintAppClient.queryPrioritySelector(this.model.env?.settings?.cartButtonSelector || global.PrintAppClient.SELECTORS.cartButton, true);
+				if (!button) return false;
+				const wasHeld = !!this.model.ui.cartButtonStyle;
+				this.model.ui.cartButton = button;
+				this.model.ui.cartButtonStyle = null;
+				if (wasHeld) this.handleCartBtn();
+				return true;
+			}
 			/** The cart button back exactly as handleCartBtn found it. */
 			releaseCartBtn() {
 				const button = this.model.ui.cartButton;

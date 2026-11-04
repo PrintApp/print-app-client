@@ -575,20 +575,32 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 }
             }
 
-            // Whatever was replaced, the cart button most likely was too: re-resolve
-            // it and re-attach the clear-on-add handler against the new element.
-            if (instance) {
-                const cartSelector = instance.model.env?.settings?.cartButtonSelector
-                    || (window.PrintAppClient && window.PrintAppClient.SELECTORS?.cartButton);
-                if (cartSelector) {
-                    instance.model.ui.cartButton = window.PrintAppShopify.queryPrioritySelector(cartSelector, true);
-                }
-                setTimeout(() => {
-                    const stored = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY)[this.model.productId]?.projectId;
-                    if (this.model.currentProjectId || stored) this.setAddToCartAction();
-                }, 0);
-            }
+            // Whatever was replaced, the cart button most likely was too.
+            if (instance) this.restoreCartButton(true);
             return true;
+        }
+
+        /**
+         * The theme re-rendered just the add-to-cart block (our mounts can
+         * survive that): the client takes the new button, still held while
+         * Customization Required waits on a design, and the clear-on-add
+         * handler moves onto it. `force` re-attaches even when the button
+         * itself stayed.
+         */
+        restoreCartButton(force) {
+            const instance = this.model.instance;
+            if (!instance?.rebindCartButton?.() && !force) return false;
+            setTimeout(() => {
+                const stored = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY)[this.model.productId]?.projectId;
+                if (this.model.currentProjectId || stored) this.setAddToCartAction();
+            }, 0);
+            return true;
+        }
+
+        /** The held cart button is gone from the page. */
+        cartButtonReplaced() {
+            const held = this.model.instance?.model?.ui?.cartButton;
+            return !!held && !held.isConnected;
         }
 
         /** LIGHT detector — see the block comment above. */
@@ -596,7 +608,9 @@ if (typeof this.PrintAppShopify === 'undefined') {
             if (this._formRerenderArmed) return;
             this._formRerenderArmed = true;
 
-            const check = () => { try { this.restoreFormMounts(); } catch (e) { console.error(e); } };
+            const check = () => {
+                try { if (!this.restoreFormMounts()) this.restoreCartButton(); } catch (e) { console.error(e); }
+            };
 
             // A re-render lands some time after its trigger: the fetch has to
             // resolve and the theme has to morph. Probe at a few points after each
@@ -653,13 +667,13 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 scheduled = true;
                 requestAnimationFrame(() => {
                     scheduled = false;
-                    try { this.restoreFormMounts(); } catch (e) { console.error(e); }
+                    try { if (!this.restoreFormMounts()) this.restoreCartButton(); } catch (e) { console.error(e); }
                 });
             };
 
             // Watch document.body for structural changes (additions/removals of children)
             this._formObserver = new MutationObserver(() => {
-                if (!this.formMountsIntact()) schedule();
+                if (!this.formMountsIntact() || this.cartButtonReplaced()) schedule();
             });
             this._formObserver.observe(document.body, { childList: true, subtree: true });
         }
