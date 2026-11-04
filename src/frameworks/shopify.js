@@ -205,6 +205,10 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 language: this.model.designData?.language,
                 projectId: currentValue.projectId,
                 previews: currentValue.previews,
+                // The remembered save's billable facts (gang sheet film length,
+                // by-size designs): a reload must price the sheet it shows.
+                canvas: isReorder ? undefined : currentValue.canvas,
+                items: isReorder ? undefined : currentValue.items,
                 mode: isReorder ? 'new-project' : (currentValue.projectId ? 'edit-project' : 'new-project'),
                 // Arrived from a collection card's button (?pa_open=1): open
                 // the editor as soon as it is ready.

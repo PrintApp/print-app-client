@@ -81,6 +81,17 @@
 					if (typeof params.previews === 'string') params.previews = JSON.parse(params.previews);
 					this.model.session.previews = params.previews;
 				}
+				//	The billable facts of the remembered save (a gang sheet's film
+				//	width x length, a by-size order's designs): the Print Options
+				//	bridge prices a reloaded page from them until the editor saves
+				//	again - without them a resumed sheet priced at the floor.
+				for (const key of ['canvas', 'items']) {
+					let value = params[key];
+					if (typeof value === 'string') {
+						try { value = JSON.parse(value); } catch (e) { value = null; }
+					}
+					if (value) this.model.session[key] = value;
+				}
 				this.model.env = {
 					isAdmin: false,
 					customValues: {},
@@ -1750,18 +1761,22 @@
 				const pages = session.pageCount ?? session.previews?.length;
 				if (Number.isFinite(pages) && pages > 0) record.pages = pages;
 
-				//	Canvas size only exists here when a width/height connector has
-				//	streamed it to us; the save payload does not carry one.
-				if (this.canvas?.w && this.canvas?.h) {
-					record.canvas = { w: this.canvas.w, h: this.canvas.h, unit: this.canvas.unit || 'mm' };
+				//	The billable canvas: this visit's save, else the remembered one
+				//	(a reloaded or resumed page, before the editor saves again).
+				const canvas = (this.canvas?.w && this.canvas?.h) ? this.canvas
+					: (session.canvas?.w && session.canvas?.h) ? session.canvas : null;
+				if (canvas) {
+					record.canvas = { w: canvas.w, h: canvas.h, unit: canvas.unit || 'mm' };
 				}
+				const items = this.items
+					|| (Array.isArray(session.items) && session.items.length ? session.items : null);
 
 				//	Provider extras live under `raw` — unknown top-level keys are
 				//	stripped by the widget's FileMetadata contract.
 				const previewUrl = session.previews?.[0]?.url;
 				const raw = {};
 				if (previewUrl) Object.assign(raw, { previewUrl, projectId: session.projectId });
-				if (this.items) raw.items = this.items;
+				if (items) raw.items = items;
 				if (this.records) raw.records = this.records;
 				if (Object.keys(raw).length) record.raw = raw;
 
