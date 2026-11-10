@@ -189,6 +189,7 @@
 				//	boot gives it back (releaseCartBtn), so a broken editor
 				//	never stops a sale.
 				this.handleCartBtn();
+				this.watchFilecheck();
 				this.fire('ui:created');
 			}
 			/**
@@ -560,6 +561,10 @@
 			handleCartBtn() {
 				const button = this.model.ui.cartButton;
 				if (!this.model?.env?.settings?.forceCustomization || !button) return;
+				//	Filecheck's upload box owns Add to cart (watchFilecheck): it
+				//	opens it for a design or an upload, so hiding it here would
+				//	stop the shopper who uploads.
+				if (this.model.act.filecheckGate) return this.releaseCartBtn();
 				if (this.model.state.mode === 'new-project') {
 					if (!this.model.ui.cartButtonStyle) this.model.ui.cartButtonStyle = {
 						value: button.style.getPropertyValue('display'),
@@ -794,11 +799,60 @@
 				this.model.session = value;
 				this.model.state.mode = 'edit-project';
 			}
+			/**
+			 * Filecheck's upload box on the same product page, on any platform
+			 * (its element's cart gate; filecheck.io docs, "Product
+			 * customizers"). When it is there it owns Add to cart for both a
+			 * design and an upload, so Customization Required stops hiding the
+			 * button. We tell it whether our design is in the cart form; the
+			 * last thing the shopper did owns the line:
+			 * - designed last: Filecheck resets its upload;
+			 * - uploaded last: its status says filesIn and our design leaves
+			 *   the cart form (clearDesign: each platform clears its own fields).
+			 * Neither side touches the other's fields. A page without Filecheck,
+			 * or with Print Options (the widget owns the cart), never hears
+			 * filecheck:ready, and nothing changes there.
+			 */
+			watchFilecheck() {
+				if (this.model.act.filecheckWatched) return;
+				this.model.act.filecheckWatched = true;
+				window.addEventListener('filecheck:ready', event => {
+					if (event?.detail?.gate !== true) return;
+					this.model.act.filecheckGate = true;
+					this.releaseCartBtn();
+					//	Every ready gets an answer: Filecheck re-mounts its box
+					//	after an add to cart, and the new one starts knowing nothing.
+					this.tellFilecheck();
+				});
+				window.addEventListener('filecheck:status', event => {
+					if (event?.detail?.filesIn !== true || !this.designIn()) return;
+					this.clearDesign();
+				});
+				//	Filecheck may already be on the page: it answers with ready.
+				this.tellFilecheck();
+			}
+			/** Our design is in the cart form: saved, and not cleared since. */
+			designIn() {
+				return this.model.state.mode === 'edit-project' && !!this.model.session?.projectId;
+			}
+			tellFilecheck() {
+				if (!this.model.act.filecheckWatched) return;
+				const lang = this.model.env?.language || {};
+				try {
+					window.dispatchEvent(new CustomEvent('filecheck:alternative', { detail: {
+						source: 'printapp',
+						done: this.designIn(),
+						required: !!this.model.env?.settings?.forceCustomization,
+						message: lang.filecheck_using_design || 'Using your design. Upload a file to use it instead.',
+					} }));
+				} catch (e) { /* no CustomEvent: an old browser keeps the old behaviour */ }
+			}
 			clearDesign() {
 				this.model.state.mode = 'new-project';
 				this.setCommandPref();
 				this.options?.onDesignCleared();
 				this.fire('app:project:reset', { projectId: this.model.session.projectId });
+				this.tellFilecheck();
 			}
 			/**
 			 * The editor could not load the remembered project (its content
@@ -1079,6 +1133,7 @@
 							}
 							this.setCommandPref();
 							this.handleCartBtn();
+							this.tellFilecheck();
 							this.options?.onDesignSaved(message.data);
 							if (message.data?.addToCart && !message.data.saveForLater)
 								this.addToCartWhenSettled(adapterWork, message.data);
