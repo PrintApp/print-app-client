@@ -32,11 +32,11 @@ class PrintAppOdoo extends PrintAppClient {
         this.on('app:project:reset', this.resetProject.bind(this));
     }
 
-    async resetProject() {
+    async resetProject(event) {
         await this.rpc(this.params.endpoints?.reset || '/printapp/reset_project', {
             product_id: this.params.product?.id,
         });
-        window.location.reload();
+        if (!window.PrintAppClient?.keepsPage?.(event)) window.location.reload();
     }
 
     async saveProject(event) {

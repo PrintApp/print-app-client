@@ -697,6 +697,8 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 this.setElementValue('');
                 this.setOrderInputs([]);
             }
+            // Filecheck's upload took the line over: a reload would lose it.
+            if (window.PrintAppClient?.keepsPage?.(value)) return;
             setTimeout(() => {
                 window.location.reload();
             }, 3e3);

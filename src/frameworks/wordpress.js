@@ -17,10 +17,11 @@ class PrintAppWordpress extends PrintAppClient {
         this.on('app:project:reset', this.resetProject);
     }
     
-    async resetProject() {
+    async resetProject(event) {
         const data = { 'product_id': this.params.product.id };
         const reset = await this.post('print_app_reset_project', data);
-        if (reset) window.location.reload();
+        // Filecheck's upload took the line over: a reload would lose it.
+        if (reset && !window.PrintAppClient?.keepsPage?.(event)) window.location.reload();
     }
     
     async saveProject(event) {

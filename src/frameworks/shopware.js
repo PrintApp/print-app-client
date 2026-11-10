@@ -77,12 +77,12 @@ class PrintAppShopware extends PrintAppClient {
         this.ensurePayloadInput(store[this.params.product.id]);
     }
 
-    resetProject() {
+    resetProject(event) {
         const store = PrintAppShopware.getStorage();
         delete store[this.params.product.id];
         window.localStorage.setItem(PrintAppShopware.STORAGEKEY, JSON.stringify(store));
         this.ensurePayloadInput(null);
-        window.location.reload();
+        if (!window.PrintAppClient?.keepsPage?.(event)) window.location.reload();
     }
 
     static getStorage() {

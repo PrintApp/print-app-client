@@ -5,6 +5,9 @@
 	
 		global.PrintAppClient = class {
 			static NAME = 'print-app-client';
+			/** An app:project:reset that must not reload the page (Filecheck's
+			 *  upload took the line over: reloading would lose the upload). */
+			static keepsPage = event => event?.keepPage === true || event?.data?.keepPage === true;
 			static EDITOR_NAME = 'print-app-editor';
 			static VERSION = '1.0';
 			static ENDPOINTS = {
@@ -739,6 +742,9 @@
 				window.removeEventListener('message', this.onMessage);
 				clearTimeout(this.model.act.bootTimer);
 				this.releaseCartBtn();
+				//	No editor any more: Filecheck must not wait for a design from us.
+				this.setEditorDown(true);
+				this.unwatchFilecheck();
 				this.model.ui.frame.remove();
 				this.fire('app:after:destroy');
 			}
@@ -814,21 +820,42 @@
 			 * filecheck:ready, and nothing changes there.
 			 */
 			watchFilecheck() {
-				if (this.model.act.filecheckWatched) return;
-				this.model.act.filecheckWatched = true;
-				window.addEventListener('filecheck:ready', event => {
+				const act = this.model.act;
+				if (act.filecheckWatched) return;
+				act.filecheckWatched = true;
+				act.onFilecheckReady = event => {
 					if (event?.detail?.gate !== true) return;
-					this.model.act.filecheckGate = true;
+					act.filecheckGate = true;
 					this.releaseCartBtn();
 					//	Every ready gets an answer: Filecheck re-mounts its box
 					//	after an add to cart, and the new one starts knowing nothing.
 					this.tellFilecheck();
-				});
-				window.addEventListener('filecheck:status', event => {
-					if (event?.detail?.filesIn !== true || !this.designIn()) return;
-					this.clearDesign();
-				});
+				};
+				//	takeover: an upload made after our design passed. The design
+				//	leaves the cart form without a reload, which would lose the upload.
+				act.onFilecheckStatus = event => {
+					if (event?.detail?.takeover !== true || !this.designIn()) return;
+					this.clearDesign({ keepPage: true });
+				};
+				window.addEventListener('filecheck:ready', act.onFilecheckReady);
+				window.addEventListener('filecheck:status', act.onFilecheckStatus);
 				//	Filecheck may already be on the page: it answers with ready.
+				this.tellFilecheck();
+			}
+			unwatchFilecheck() {
+				const act = this.model.act;
+				if (!act.filecheckWatched) return;
+				window.removeEventListener('filecheck:ready', act.onFilecheckReady);
+				window.removeEventListener('filecheck:status', act.onFilecheckStatus);
+				act.filecheckWatched = false;
+				act.filecheckGate = false;
+			}
+			/** The editor can't be used (a stalled boot, the frame removed): a design is
+			 *  then not required, so a broken editor never stops a sale. A late
+			 *  validation makes it usable again. */
+			setEditorDown(down) {
+				if (!!this.model.act.editorDown === !!down) return;
+				this.model.act.editorDown = !!down;
 				this.tellFilecheck();
 			}
 			/** Our design is in the cart form: saved, and not cleared since. */
@@ -842,16 +869,18 @@
 					window.dispatchEvent(new CustomEvent('filecheck:alternative', { detail: {
 						source: 'printapp',
 						done: this.designIn(),
-						required: !!this.model.env?.settings?.forceCustomization,
+						required: !!this.model.env?.settings?.forceCustomization && !this.model.act.editorDown,
 						message: lang.filecheck_using_design || 'Using your design. Upload a file to use it instead.',
 					} }));
 				} catch (e) { /* no CustomEvent: an old browser keeps the old behaviour */ }
 			}
-			clearDesign() {
+			/** keepPage: clear the cart fields and storage without the reload the
+			 *  platform adapters otherwise do after a reset. */
+			clearDesign({ keepPage = false } = {}) {
 				this.model.state.mode = 'new-project';
 				this.setCommandPref();
 				this.options?.onDesignCleared();
-				this.fire('app:project:reset', { projectId: this.model.session.projectId });
+				this.fire('app:project:reset', { projectId: this.model.session.projectId, ...(keepPage ? { keepPage: true } : {}) });
 				this.tellFilecheck();
 			}
 			/**
@@ -1019,6 +1048,7 @@
 					//	No editor to design in: the customer can still buy. A late
 					//	validation holds the button again.
 					this.releaseCartBtn();
+					this.setEditorDown(true);
 					if (!this.model.ui.frame?.isConnected) return;
 					this.bootStep('stalled', { stalled: step });
 					console.warn(`[Print.App] ${message}`);
@@ -1153,6 +1183,7 @@
 						break;
 						case 'app:validation:success':
 							clearTimeout(this.model.act.bootTimer);
+							this.setEditorDown(false);
 							this.bootStep('validated', { validations: this.model.boot.validations + 1, validation: 'success', validationReason: null, stalled: null });
 							this.model.settings = message.data.settings;
 							this.fire(message.event, message.data, true);
@@ -1352,6 +1383,8 @@
 				this.unlockScroll();
 				this.options?.dispose();
 				this.releaseCartBtn();
+				this.setEditorDown(true);
+				this.unwatchFilecheck();
 				if (this.model.ui.frame && this.model.ui.frame.parentNode) {
 					this.model.ui.frame.parentNode.removeChild(this.model.ui.frame);
 				}
