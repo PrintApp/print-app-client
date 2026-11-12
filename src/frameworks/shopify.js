@@ -114,7 +114,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
             // (hosted accounts can't write this origin's localStorage): a
             // ?pa_project=&pa_action= link seeds the same storage entry the
             // classic account page writes, then mountClient() takes over.
-            this.applyUrlHandoff();
+            await this.applyUrlHandoff();
 
             const paData = await fetch(`${window.PrintAppShopify.ENDPOINTS.runCdn}dom_sp_${this.model.storeId}/${this.model.productId}/sp?lang=${this.model.langCode}`)
                                 .then(d => d.json()).catch(console.error);
@@ -945,7 +945,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
         // ?pa_open=1 — written by a collection card's button (mountCollection):
         // the customer already chose to personalise, so the editor opens on
         // arrival instead of waiting for a second click on this page.
-        applyUrlHandoff() {
+        async applyUrlHandoff() {
             let params;
             try { params = new URLSearchParams(window.location.search); } catch { return; }
 
@@ -958,8 +958,20 @@ if (typeof this.PrintAppShopify === 'undefined') {
 
             if (handoff) {
                 const action = params?.get('pa_action') === 'reorder' ? 'reorder' : 'resume';
+                let entry = { projectId, action };
+                // The link carries the id only. The saved-designs list has the
+                // rest for the logged-in customer a hosted account always is:
+                // previews, order pairs, and a gang sheet's length, without
+                // which the resumed sheet priced at the floor.
+                if (action === 'resume' && window.__st?.cid) {
+                    const data = await fetch(`/apps/printapp/projects?lang=${encodeURIComponent(this.model.langCode || 'en')}`)
+                                    .then(d => d.ok ? d.json() : null)
+                                    .catch(() => null);
+                    const project = (data?.projects || []).find(p => p?.id === projectId);
+                    if (project && !project.completed) entry = this.accountEntry(project);
+                }
                 const store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
-                store[this.model.productId] = { projectId, action };
+                store[this.model.productId] = entry;
                 window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
             }
 
@@ -1039,18 +1051,31 @@ if (typeof this.PrintAppShopify === 'undefined') {
             if (!project?.product?.id) return;
 
             const store = window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY);
-            store[project.product.id] = {
-                projectId: project.id,
-                previews: (project.pages || []).map(page => ({ url: page.preview })),
-                orderData: Array.isArray(project.orderData) ? project.orderData : [],
-                // Ordered projects duplicate (their file is what the merchant
-                // prints); everything else — saved-for-later AND unfinished
-                // autosaves — resumes, which doubles as design recovery.
-                action: project.completed ? 'reorder' : 'resume',
-            };
+            store[project.product.id] = this.accountEntry(project);
             window.localStorage.setItem(window.PrintAppShopify.STORAGEKEY, JSON.stringify(store));
 
             if (project.product.url) window.location.href = project.product.url;
+        }
+
+        // The per-product storage entry for a project from the saved-designs
+        // list — what mountClient() resumes from.
+        accountEntry(project) {
+            // Ordered projects duplicate (their file is what the merchant
+            // prints); everything else — saved-for-later AND unfinished
+            // autosaves — resumes, which doubles as design recovery.
+            const reorder = !!project.completed;
+            const entry = {
+                projectId: project.id,
+                previews: (project.pages || []).map(page => ({ url: page.preview })),
+                orderData: Array.isArray(project.orderData) ? project.orderData : [],
+                action: reorder ? 'reorder' : 'resume',
+            };
+            // The billable facts saved with it (a gang sheet's film length, a
+            // by-size order's designs): this device remembers none, and a
+            // resume must price the sheet it opens. A re-order starts over.
+            if (!reorder && project.pricing?.canvas?.w && project.pricing?.canvas?.h) entry.canvas = project.pricing.canvas;
+            if (!reorder && Array.isArray(project.pricing?.items) && project.pricing.items.length) entry.items = project.pricing.items;
+            return entry;
         }
 
         static initCustomModifications() {

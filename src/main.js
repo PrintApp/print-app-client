@@ -1889,6 +1889,23 @@
 			}
 
 			/**
+			 * A resumed (edit-project) gang sheet priced by its length, with no
+			 * length known on this page: not from this visit's save, not from
+			 * the remembered one (another device, or a project saved before
+			 * projects kept it). Without one the widget prices the floor.
+			 */
+			needsSavedLength() {
+				const model = this.client?.model;
+				if (model?.state?.mode !== 'edit-project') return false;
+				if (this.canvas?.w && this.canvas?.h) return false;
+				const session = model.session || {};
+				if (session.canvas?.w && session.canvas?.h) return false;
+				const env = model.env || {};
+				const ids = [env.designId, ...(env.designList || []).map(d => d?.id ?? d)];
+				return ids.some(id => typeof id === 'string' && id.startsWith('design_gang_'));
+			}
+
+			/**
 			 * forceCustomization, expressed as a hold instead of hiding a button.
 			 *
 			 * The widget owns add-to-cart wherever it renders, and its own loader
@@ -1897,7 +1914,15 @@
 			 * CTA and composes with anyone else's (Filecheck's, say).
 			 */
 			applyForceCustomization() {
-				if (!this.ready || !this.client?.model?.env?.settings?.forceCustomization) return;
+				if (!this.ready) return;
+				//	A resumed gang sheet whose length this page doesn't know
+				//	would price at the floor: hold until the editor saves it,
+				//	whatever forceCustomization says.
+				if (this.needsSavedLength()) {
+					this.hold(this.lang.open_to_price || 'Open your design to update the price');
+					return;
+				}
+				if (!this.client?.model?.env?.settings?.forceCustomization) return;
 				if (!this.hasDesign) return;
 
 				if (this.client.model.state.mode === 'new-project') {
