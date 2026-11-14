@@ -1223,7 +1223,7 @@
 				if (global.PrintAppClient.OptionsBridge.targets(data.selector))
 					return this.options?.update(data);
 
-				const element = document.querySelector(data.selector);
+				const element = global.PrintAppClient.deepQuery(data.selector);
 				if (!element) return;
 
 				this.model.state._pauseDispatch = true;
@@ -1281,7 +1281,7 @@
 
 				let element;
 				try {
-					element = document.querySelector(data.selector);
+					element = global.PrintAppClient.deepQuery(data.selector);
 				} catch (e) { console.error(e) }
 				if (!element) return;
 
@@ -1341,13 +1341,14 @@
 				//	element found above is just the radio checked right now; a radio fires
 				//	`change` only when it becomes checked (never when it is left), and themes
 				//	re-render their variant pickers on every change, so a listener on it went
-				//	deaf after the first pick. Once per group and connector.
+				//	deaf after the first pick. Once per group and connector. A group inside a
+				//	shadow root is listened to there: `change` does not cross out of one.
 				if (element.tagName === 'INPUT' && element.type === 'radio' && element.name) {
 					const key = `${element.name}|${data.callbackEvent}|${JSON.stringify(data.callbackData || {})}`;
 					this.model.state._radioHooks ??= new Set();
 					if (this.model.state._radioHooks.has(key)) return;
 					this.model.state._radioHooks.add(key);
-					document.addEventListener('change', evt => {
+					(element.getRootNode?.() || document).addEventListener('change', evt => {
 						const target = evt.target;
 						if (!target || target.tagName !== 'INPUT' || target.type !== 'radio') return;
 						if (target.name !== element.name || !target.checked) return;
@@ -1542,9 +1543,29 @@
 			/** The radio in `radio`'s group (same name, same form or document) whose value
 			 *  is `value`, or null. */
 			static radioFor(radio, value) {
-				const scope = radio.form || radio.ownerDocument || document;
+				const scope = radio.form || radio.getRootNode?.() || radio.ownerDocument || document;
 				return [...scope.querySelectorAll('input[type="radio"]')]
 					.find(input => input.name === radio.name && input.value === String(value)) || null;
+			}
+
+			/**
+			 * document.querySelector, then the same inside open shadow roots: page
+			 * builders such as Instant render the product section, size fields and
+			 * all, into one. The light DOM answers first, so a page without shadow
+			 * roots behaves exactly as before.
+			 */
+			static deepQuery(selector) {
+				const found = document.querySelector(selector);
+				if (found) return found;
+				const search = root => {
+					for (const element of root.querySelectorAll('*')) {
+						if (!element.shadowRoot) continue;
+						const hit = element.shadowRoot.querySelector(selector) || search(element.shadowRoot);
+						if (hit) return hit;
+					}
+					return null;
+				};
+				return search(document);
 			}
 
 			static queryPrioritySelector(selectors, visible) {

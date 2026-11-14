@@ -87,9 +87,10 @@ if (typeof this.PrintAppShopify === 'undefined') {
             const liquidForm = document.getElementById('print-app-shopify-mount');
             if (liquidForm?.dataset?.productId) {
                 this.model.productId = liquidForm.dataset.productId;
-                this.model.cartForm = liquidForm.closest('form') || 
-                                        window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
-                
+                this.model.cartForm = this.liquidMountForm(liquidForm)
+                    // A page builder may attach its shadow root after we run.
+                    || await window.PrintAppShopify.waitFor(() => this.liquidMountForm(liquidForm), 4000);
+
                 if (!this.model.cartForm || !this.model.productId) return;
                 liquidForm.insertAdjacentHTML('afterbegin', paButtons);
 
@@ -152,7 +153,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
             // editor, which saves a fresh project (and, in replacing this
             // storage entry, clears the action flag).
             const isReorder = currentValue.action === 'reorder';
-            if (!document.getElementById('_printapp')) {
+            if (!this.paInput('_printapp')) {
                 this.model.cartForm.insertAdjacentHTML('afterbegin', `
                     <input id="_printapp" name="properties[_printapp]" type="hidden" value="">
                     <input id="_printapp-pdf-download" name="properties[_printapp-pdf-download]" type="hidden" value="">
@@ -265,6 +266,32 @@ if (typeof this.PrintAppShopify === 'undefined') {
                 if (holder) return holder;
             }
             return window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+        }
+
+        /**
+         * The cart form our Liquid mount (the Print.App Container app block)
+         * belongs to: the form around it, else the page's first visible one.
+         * Page builders such as Instant render the whole product section into
+         * an open shadow root and give app blocks a slot in it, so the block
+         * stays in the light DOM while its form is out of reach of closest()
+         * and document.querySelector. Last resort: the form inside a shadow
+         * root that sells this block's product.
+         */
+        liquidMountForm(mount) {
+            return mount.closest('form')
+                || window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true)
+                || window.PrintAppShopify.shadowCartForm(mount.dataset.productId);
+        }
+
+        /**
+         * One of our hidden inputs (_printapp, _printapp-pdf-download). By id
+         * in the document, else inside the cart form: a form in a shadow root
+         * keeps them where document.getElementById can't see.
+         */
+        paInput(id) {
+            const form = this.model.cartForm;
+            // A re-rendered form leaves the old one detached, still holding its inputs.
+            return document.getElementById(id) || (form?.isConnected ? form.querySelector(`#${id}`) : null) || null;
         }
 
         /**
@@ -534,7 +561,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
 
         /** Both of our injected nodes still in the document? */
         formMountsIntact() {
-            return !!document.getElementById('pa-buttons') && !!document.getElementById('_printapp');
+            return !!document.getElementById('pa-buttons') && !!this.paInput('_printapp');
         }
 
         /** Re-inject whatever is missing. Returns true when something was restored. */
@@ -546,8 +573,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
             const liquidForm = document.getElementById('print-app-shopify-mount');
             let target, newForm;
             if (liquidForm?.dataset?.productId) {
-                newForm = liquidForm.closest('form')
-                    || window.PrintAppShopify.queryPrioritySelector(window.PrintAppShopify.SELECTORS.cartForm, true);
+                newForm = this.liquidMountForm(liquidForm);
                 target = liquidForm;
             } else {
                 newForm = this.findCartForm();
@@ -558,7 +584,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
             this.model.cartForm = newForm;
 
             // The hidden inputs that carry the project id (and order details) into the cart.
-            if (!document.getElementById('_printapp')) {
+            if (!this.paInput('_printapp')) {
                 newForm.insertAdjacentHTML('afterbegin', `
                     <input id="_printapp" name="properties[_printapp]" type="hidden" value="">
                     <input id="_printapp-pdf-download" name="properties[_printapp-pdf-download]" type="hidden" value="">
@@ -792,8 +818,8 @@ if (typeof this.PrintAppShopify === 'undefined') {
             this.setAddToCartAction();
         }
         setElementValue(value) {
-            const   element = document.getElementById(`_printapp`),
-                    pdfElement = document.getElementById(`_printapp-pdf-download`);
+            const   element = this.paInput('_printapp'),
+                    pdfElement = this.paInput('_printapp-pdf-download');
 
             if (element) element.value = value;
             if (pdfElement) pdfElement.value = value ? `${window.PrintAppShopify.ENDPOINTS.pdf}${value}` : '';
@@ -806,8 +832,8 @@ if (typeof this.PrintAppShopify === 'undefined') {
          * DOM APIs, not markup: a label with quotes must not break the form.
          */
         setOrderInputs(orderData) {
-            const   form = this.model.cartForm || document.getElementById('_printapp')?.form,
-                    anchor = document.getElementById('_printapp');
+            const   anchor = this.paInput('_printapp'),
+                    form = this.model.cartForm || anchor?.form;
             if (!form && !anchor) return;
             (form || document).querySelectorAll('input[data-pa-order]').forEach(el => el.remove());
             for (const entry of Array.isArray(orderData) ? orderData : []) {
@@ -845,7 +871,7 @@ if (typeof this.PrintAppShopify === 'undefined') {
          */
         confirmAddThenClear() {
             const projectId = this.model.currentProjectId
-                || document.getElementById('_printapp')?.value
+                || this.paInput('_printapp')?.value
                 || (window.PrintAppShopify.getStorage(window.PrintAppShopify.STORAGEKEY) || {})[this.model.productId]?.projectId;
             if (!projectId) return Promise.resolve(undefined);
             if (this._confirmingAdd) return this._confirmingAdd;
@@ -1460,6 +1486,41 @@ if (typeof this.PrintAppShopify === 'undefined') {
             }
             // Return the first available element if no visible element was found
             return firstAvailable;
+        }
+
+        /** Every open shadow root under `root`, nested ones included. */
+        static shadowRoots(root = document, found = []) {
+            for (const element of root.querySelectorAll('*')) {
+                if (!element.shadowRoot) continue;
+                found.push(element.shadowRoot);
+                window.PrintAppShopify.shadowRoots(element.shadowRoot, found);
+            }
+            return found;
+        }
+
+        /**
+         * The cart form selling `productId` inside an open shadow root (a page
+         * builder's product section, e.g. Instant), or null. Matched by product
+         * id: a builder page can carry other products' quick-add forms too.
+         */
+        static shadowCartForm(productId) {
+            if (!productId) return null;
+            for (const root of window.PrintAppShopify.shadowRoots()) {
+                const form = Array.from(root.querySelectorAll(window.PrintAppShopify.SELECTORS.cartForm))
+                    .find(form => form.querySelector('input[name="product-id"]')?.value === String(productId));
+                if (form) return form;
+            }
+            return null;
+        }
+
+        /** Resolves to probe()'s first truthy answer, polled until `timeout` ms, else null. */
+        static async waitFor(probe, timeout) {
+            for (const end = Date.now() + timeout; Date.now() < end;) {
+                await new Promise(resolve => setTimeout(resolve, 250));
+                const found = probe();
+                if (found) return found;
+            }
+            return null;
         }
     }
 }
