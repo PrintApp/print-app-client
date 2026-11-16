@@ -46,10 +46,10 @@
 		} catch (e) { return false; }
 	};
 
-	// Saved embeds change rarely; a five-minute window keeps edits showing
-	// soon while the CDN still serves almost every view.
+	// A one-minute window: the browser's own copy never outlives a minute,
+	// and the API clears the CDN's copy when an embed is replaced.
 	const fetchEmbed = async (id) => {
-		const res = await fetch(`${CDN}scenes/embeds/${id}.json?v=${Math.floor(Date.now() / 3e5)}`);
+		const res = await fetch(`${CDN}scenes/embeds/${id}.json?v=${Math.floor(Date.now() / 6e4)}`);
 		if (!res.ok) throw new Error(`embed ${id} not found`);
 		return res.json();
 	};
