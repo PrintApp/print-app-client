@@ -115,7 +115,7 @@
 				spec: embed.spec,
 				artworkMm: embed.artworkMm,
 				pages: embed.pages || [],
-				page: embed.page || 1,
+				page: embed.page || undefined,
 				cameraState: embed.camera,
 				autoSpin: embed.options?.autoSpin !== false,
 				views: embed.options?.views !== false,
