@@ -1362,9 +1362,26 @@
 					});
 					return;
 				}
+				//	Everything else that fires an event (a select, a fieldset, a text input, a
+				//	button): listen from the element's root, and find the element again by its
+				//	selector on every event, for the same reason as the radio group above. A
+				//	theme that replaces its variant dropdown when a variant is picked (Athens
+				//	swaps the whole <select>) left a listener on the element hearing the first
+				//	pick and none after it, so a designer already loaded kept the old size.
+				//	Capture: a theme's own handler cannot stop the event before it gets here.
+				//	Once per selector and connector — a design load registers again, and each
+				//	registration used to add a listener and so another copy of every message.
 				const eventType = (element.tagName === 'BUTTON') ? 'click' : 'change';
-				element.addEventListener(eventType, evt => {
+				const key = `${data.selector}|${eventType}|${data.callbackEvent}|${JSON.stringify(data.callbackData || {})}`;
+				this.model.state._elementHooks ??= new Set();
+				if (this.model.state._elementHooks.has(key)) return;
+				this.model.state._elementHooks.add(key);
+				(element.getRootNode?.() || document).addEventListener(eventType, evt => {
 					if (this.model.state._pauseDispatch) return;
+					let current;
+					try { current = global.PrintAppClient.deepQuery(data.selector); } catch (e) { return; }
+					//	the element as the page has it now, or something inside it
+					if (!current || (evt.target !== current && !current.contains(evt.target))) return;
 
 					this.sendMsg(data.callbackEvent, {
 						selector: data.selector,
@@ -1372,7 +1389,7 @@
 						event: eventType,
 						callbackData: data.callbackData,
 					})
-				})
+				}, true)
 			}
 
 			unload(data) {
